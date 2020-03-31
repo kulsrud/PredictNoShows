@@ -1,0 +1,1026 @@
+---
+title: "Predicting Medical Appointment No-shows"
+author: "Knut Ulsrud"
+date: "6/4/2020"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+```{r load, echo=FALSE, include = FALSE}
+
+if(!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org") #For general data cleaning
+if(!require(caret)) install.packages("caret", repos = "http://cran.us.r-project.org") #For creating test and train set
+if(!require(gridExtra)) install.packages("gridExtra", repos = "http://cran.us.r-project.org") #For displaying graphs side by side
+if(!require(lubridate)) install.packages("lubridate", repos = "http://cran.us.r-project.org") #For manipulating date variables
+if(!require(woeBinning)) install.packages("WoeBinning", repos = "http://cran.us.r-project.org") #For binning variables automatically
+
+#ML Packages
+if(!require(e1071)) install.packages("e1071", repos = "http://cran.us.r-project.org") #For binning variables automatically
+if(!require(pROC)) install.packages("pROC", repos = "http://cran.us.r-project.org") #For binning variables automatically
+if(!require(rpart.plot)) install.packages("rpart.plot", repos = "http://cran.us.r-project.org") #For binning variables automatically
+if(!require(rpart)) install.packages("rpart", repos = "http://cran.us.r-project.org") #For binning variables automatically
+if(!require(DMwR)) install.packages("DMwR", repos = "http://cran.us.r-project.org") #For binning variables automatically - check if this is an error
+library()
+
+url<- "https://github.com/kulsrud/PredictNoShows/raw/master/" 
+file<- "KaggleV2-May-2016.csv"
+df<- read.csv(paste(url, file, sep = ""))
+
+
+
+```
+
+# Overview
+This section presents the project's goals and a high-level overview of project data. 
+
+## Goal of the project and key steps that were performed
+This project's goal was to predict attendance (i. e. No-show vs. attended) for doctor's appointments based on publicly available medical appointment data. This report was produced as a submission to the Data Science: Capstone course provided by HarvardX on the EdX platform.
+
+## Dataset Description
+The medical appointment dataset  has 110,527 rows and 14 columns, and contains patient attendance data from April 29 to June 8, 2016, for a clinic in Brazil. The original dataset was sourced via Kaggle (ADD HYPERLINK). Columns contain the following information:  
+
+Variable name |Variable Description
+--------------|------------------------------------------------------------------------
+1. PatientId | Unique identifier for each patient
+2. AppointmentID | Unique identifier for each appointment
+3. Gender | Male or Female
+4. ScheduledDay | When the appointment was scheduled
+5. AppointmentDay | When the appointment happened
+6. Age | Patient age
+7. Neighbourhood | What neighbourhood patient lived in
+8. Scholarship | Binary variable related to scholarship reception through the Bolsa Familia program
+9. Hypertension | Whether the patient lived with hypertension
+10. Diabetes | Whether the patient lived with diabetes
+11. Alcoholism | Whether the patient lived with alcoholism
+12. Handicap | Whether the patient lived with a physical handicap (i. e. blindness, inability to walk, etc.)
+13. SMS_received | Whether the patient received an SMS reminder
+14. No_show | Whether the patient showed up for their appointment
+
+
+
+The following table shows the first four rows of the dataset.  
+
+```{r description, echo=FALSE}
+
+#Correct typos in variable names
+names(df)[names(df)=="Hipertension"]<- "Hypertension"
+names(df)[names(df)=="Handcap"]<- "Handicap"
+names(df)[names(df)=="No.show"]<- "No_show"
+
+#To show top 4 rows of sample data
+knitr::kable(head(df, 4), "markdown") 
+
+```
+
+# Methods and Analysis
+This section presents steps taken to perform initial analysis on the dataset. It includes the following sections: Data Preaparation, Data Exploration and Visualization, Insights Gained, and Modelling Approach.  
+
+## Data Preparation
+A high-level check revealed that there were no missing values in the appointment dataset. The data was already presented in a tidy format (one row equals one observation / appointment) which means no additional transformation was required to start using the dataset.
+
+There are two date columns which were provided in year-month-date -- hour-minute-second format (i. e. "2016-04-29T00:00:00Z"). To facilitate analysis, both ScheduledDay and AppointmentDay columns were transformed into the following:
+
+* Day of week
+* Hour of day (only available for ScheduledDay)
+* Duration from booking to appointment
+
+For AppointmentDay all hour-minute-second data was set to 00:00:00. This means that calculated duration from booking to appointment might err by the number of hours from 00:00:00 to clinic closing, at which time the last appointment would have taken place. 
+
+```{r cleaning, echo = FALSE, include = FALSE}
+
+head(df) #The dataset is tidy, with each row representing one appointment slot 
+colSums((is.na(df))) #There are no missing values in the dataset
+
+#Transformed date variables to date format. 
+df<- df %>% mutate(ScheduledDay = as_datetime(str_remove(str_replace(ScheduledDay, "T", " "), "Z")),
+                      AppointmentDay = as_datetime(str_remove(str_replace(AppointmentDay, "T", " "), "Z")),
+                      AppointmentWeekDay = weekdays(AppointmentDay),
+                      ScheduledWeekDay = weekdays(ScheduledDay),
+                      ScheduledHour = hour(ScheduledDay),
+                      No_show = ifelse(No_show=="No", FALSE, TRUE),
+                      BookingDifference = as.numeric(AppointmentDay - ScheduledDay))
+
+
+```
+
+## Data Exploration and Visualization
+It is likely that there is systematic variation between patient specific information and whether or not they No-show. This section will explore this variation according to 
+
+* Scheduling and appointment timing
+* Past no-shows
+* Demographics effects (i. e. age, gender, etc.)
+* Medical information
+* Other binary identifiers
+
+It will also explore basic characteristics of variables of interest.
+
+### Basic Exporation
+Roughly 20% of appointments in the dataset were missed. `r print(paste("The dataset covers", duration, "days, from", min_date, "to", max_date))`
+
+```{r base, echo = FALSE}
+
+#Estimate overall No-show proportion
+knitr::kable(prop.table(table(df$No_show)), col.names = c("No-show", "Proportion"), format = "markdown", digits = 3)
+
+#Highlight total duration of dataset
+min_date<- min(df$AppointmentDay)
+max_date<- max(df$AppointmentDay)
+myDates <-seq(from = min_date, to = max_date, by = "days")
+duration<- length(which(wday(myDates) %in% c(2:6)))
+#Number of weekdays covered: 
+
+
+```
+
+### Appointment Timing
+This section explores variation between time-related variables and appointment No-shows. 
+
+#### Appointment and scheduling Weekday
+At first glance it appears that appointments that were scheduled on Saturdays were much less likely to be missed. Otherwise, scheduling day does not appear to vary by meaningful proportions. 
+
+```{r weekday, echo = FALSE}
+
+#Look at No-shows by weekday
+scheduled<- df %>%
+     group_by(ScheduledWeekDay) %>% #To see individual movies by name
+     summarize(No_show = mean(No_show)) %>% 
+     ggplot(aes(factor(ScheduledWeekDay, levels = c("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"), ordered = TRUE), No_show))+
+     geom_bar(stat = "identity")+
+     coord_flip()+
+    scale_y_continuous(limits = c(0, 0.25))+
+     labs(title = "No-show proportion, by weekday scheduled",
+       x = NULL, 
+       y = NULL)
+
+appointment<- df %>%
+    group_by(AppointmentWeekDay) %>% #To see individual movies by name
+     summarize(No_show = mean(No_show)) %>% 
+      ggplot(aes(factor(AppointmentWeekDay, levels = c("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"), ordered = TRUE), No_show))+
+      geom_bar(stat = "identity")+
+      coord_flip()+
+      scale_y_continuous(limits = c(0, 0.25))+
+      labs(title = "No-show proportion, by appointment weekday",
+       x = NULL, 
+       y = NULL)
+
+grid.arrange(scheduled, appointment)
+
+```
+
+On the other hand, appointents held on Saturdays appear to be missed more often than other days, while Thursday appointments are kept most often. There is minor variation between other days of the week.
+
+Further exploration reveal that that much fewer appointments were scheduled and held on Saturdays than on other days. This indicates that Saturday data may be less reliable than other weekdays, as it may be susceptible to for instance selection bias. 
+
+```{r saturdays, echo = FALSE}
+
+#Scheduled on Saturdays vs. No-show
+df %>% 
+  group_by(factor(ScheduledWeekDay, levels = c("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"))) %>% 
+  summarize(n = n(), No_show = mean(No_show)) %>%
+  knitr::kable(digits = 2, col.names = c("Scheduled Weekday", "Appointments", "Percent No-show"))
+
+
+#Appointment on Saturdays vs. Walk-ins
+df %>% 
+  group_by(factor(AppointmentWeekDay, levels = c("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"))) %>% 
+  summarize(n = n(), No_show = mean(No_show)) %>%
+  knitr::kable(digits = 2, col.names = c("Appointment Weekday", "Appointments", "Percent No-show"))
+
+```
+
+Instead of filtering for Saturday schedulings and removing useful data, a more prudent decision would be to drop Weekday Scheduled, as other days did not vary meaningfully. 
+
+Saturday appointment effects are small enough that it should not meaningfully skew the data, and the final model could be tested with and without this data incuded. This would confirm whether the variation between appointment weekdays is explained by other variables. 
+
+#### Hour of day scheduled
+The hour of day that appointments were scheduled also seems to have an impact, varying from around 15% No-shows early in the morning, to over 30% late in the evening. It is unclear why this should be the case, other than that patients may be more tired and forgetful later in the day. 
+
+```{r hours, echo = FALSE}
+
+#Look at No-shows by hour of the day
+df %>%
+     group_by(ScheduledHour) %>% #To see individual movies by name
+     summarize(No_show = mean(No_show)) %>% 
+     ggplot(aes(ScheduledHour, No_show))+
+        geom_bar(stat = "identity")+
+  labs(title = "Appointment no-show proportion, by hour of day scheduled",
+       x = "Hour of day scheduled", 
+       y = "No-show proportion")
+
+```
+
+#### Difference between scheduling and appointment
+By binning the difference between scheduled time and appointment time we see that there is substantial and systematic variation between time differences, and No-shows. 
+
+Interestingly there are appointments that are recorded as scheduled after the appointment took place. This has two potential explanations. One is the aforementioned issue where exact appointment time was not reported, only date and 00:00:00 for hour-minute-second. This would mean that any same-day scheduled appointment would appear negative. Furthermore, a patient walk-in could happen between the doctor and patient, and entered into the system by an administrator later. 
+
+Either way, the recorded difference between scheduling and appointment timing likely deviates from the true difference by a number of hours. This is made clear by the presence of negative values. This paper continues the timing difference exploration with this caveat in mind. 
+
+```{r wait, echo = FALSE}
+#Bin difference between scheduled time and appointment time
+df %>%
+  group_by(BookDiffBin = ntile(BookingDifference, 12)) %>%
+  summarize(No_show = mean(No_show), BookDiff = mean(BookingDifference)) %>%
+  ggplot(aes(BookDiffBin, No_show))+
+  geom_bar(stat = "identity", size = 1)+
+  #geom_step(aes(ntile(BookDiffBin, 3)))
+  geom_label(aes(x = BookDiffBin, y = No_show + 0.05, label = round(BookDiff, 0)))+
+  scale_x_continuous(breaks = c(seq.int(1, 12, 1)))+
+  labs(title = "Average difference between scheduling time and appointment time",
+       x = "Bin", 
+       y = "No-show proportion")
+
+```
+
+To best identify No-show outcomes it is reasonable to bin the hours difference data. This is especially the case given that individual observations might vary within a few hours from their actual time, as just explained. This would smooth data recording errors while retaining high-level variation. 
+
+Three different options for binning data was explored. 
+
+1. Even binning in 3 bins
+2. Binning based on the intuition that three common appointment types vary by Walk-ins (less than 1 hours difference), Scheduled within a week (1 to 168 hours difference), and Scheduled within more than one week (more than 168 hours difference)
+3. Automated binning using the woeBinning package .
+
+```{r bins, echo = FALSE}
+
+ntile_bins<- df %>%
+  group_by(BookDiffBin = ntile(BookingDifference, 3)) %>%
+  summarize(No_show = mean(No_show), BookDiff = mean(BookingDifference)) %>%
+  ggplot(aes(BookDiffBin, No_show))+
+  geom_bar(stat = "identity", size = 1)+
+  #geom_step(aes(ntile(BookDiffBin, 3)))
+  geom_label(aes(x = BookDiffBin, y = No_show + 0.05,    label = round(BookDiff, 0)))+
+  scale_x_discrete(breaks = NULL)+
+  scale_y_continuous(limits = c(0, 0.4))+
+  #theme(axis.text.x = element_text(angle = 45, hjust = 1))+
+  labs(title = "Binned by frequency",
+       x = NULL, 
+       y = "No-show proportion")
+
+#Intuition about walk-ins
+intuitive<- df %>%
+  mutate(AppointmentType = ifelse(BookingDifference > 1, ifelse(BookingDifference > 168, "Long-term", "Within one week"), "Walk-in")) %>%
+  group_by(AppointmentType) %>%
+  summarize(No_show = mean(No_show), BookDiff = mean(BookingDifference)) %>%
+  ggplot(aes(reorder(AppointmentType,No_show), No_show))+
+  geom_bar(stat = "identity", size = 1)+
+  geom_label(aes(x = AppointmentType, y = No_show + 0.05, label = round(BookDiff, 0)))+
+  scale_x_discrete(breaks = NULL)+
+  scale_y_continuous(limits = c(0, 0.4))+
+  #theme(axis.text.x = element_text(angle = 45, hjust = 1))+
+  labs(title = "Binned by Appointment Type",
+       x = NULL, 
+       y = NULL)
+
+#Binning - less applicable than insight about walk-ins
+bins<- woe.binning(df = df, target.var = 'No_show', pred.var = 'BookingDifference')
+auto_bin<- (woe.binning.deploy(df, bins) %>%
+              pull(as.numeric(BookingDifference.binned)))
+
+auto<- df %>%
+  mutate(auto_bin = auto_bin) %>% 
+  group_by(auto_bin) %>%
+  summarize(No_show = mean(No_show), BookDiff = mean(BookingDifference)) %>%
+  ggplot(aes(auto_bin, No_show))+
+  geom_bar(stat = "identity", size = 1)+
+  geom_label(aes(x = auto_bin, y = No_show + 0.05, label = round(BookDiff, 0)))+
+  scale_x_discrete(breaks = NULL)+
+  scale_y_continuous(limits = c(0, 0.4))+
+  #theme(axis.text.x = element_text(angle = 45, hjust = 1))+
+  labs(title = "Binned by woeBinning",
+       x = NULL, 
+       y = NULL)
+
+grid.arrange(ntile_bins, intuitive, auto, ncol = 3,
+             widths = c(2.5, 2, 2))
+
+```
+
+Numbers above each column represent average hours difference. The two first options yield similar results. This means that there is a fairly even distribution between the three identified appointment types. It also shows that appointments binned by intuition show systematic differences between No-show rates. Automatic binning resulted in two bins with negative data and one with positive, which is difficult to rationalize as a model input. 
+
+Given its intuitive explanation and reasonably even distribution of appointments in each bin, option 2 will be used for modelling purposes. 
+
+### Demographics 
+Intro
+
+#### Patient effects
+
+```{r demographics, echo = FALSE}
+
+#Looking at patient effects
+df %>%
+  group_by(PatientId) %>%
+  summarize(No_show = mean(No_show), 
+            n = n(), 
+            AppointmentsPerDay = n / duration) %>% #Assuming that multiple appointments per day means longer appointments (i. e. units scheduled back to back)
+  ggplot(aes(AppointmentsPerDay, No_show))+
+  geom_point()+
+  labs(title = "No-show proportion by patient ID",
+       x = "Average number of appointments per day", 
+       y = "Average proportion No-shows")
+  
+```
+
+#### Age
+
+```{r age, echo = FALSE}
+
+#Looking at age effects
+df %>% 
+  filter(Age < 100) %>% 
+  group_by(Age) %>%
+  summarize(No_show = mean(No_show), n = n()) %>% 
+  ggplot(aes(Age, No_show))+
+  geom_point()+
+  geom_smooth(method = "auto")+
+  labs(title = "No-show proportion by age",
+       x = "Age", 
+       y = "Average proportion No-shows")
+
+```
+
+#### Gender
+
+```{r gender, echo = FALSE}
+
+#Looking at Gender effects
+df %>%
+  group_by(Gender) %>%
+  summarize(No_show = mean(No_show)) %>%
+  ggplot(aes(Gender, No_show))+
+  geom_bar(stat = "identity")+
+  labs(title = "No-show proportion by gender",
+       x = "Gender", 
+       y = "Proportion No-shows")
+#No evidence of gender effects
+
+
+
+```
+
+#### Neighbourhoods
+
+```{r neighbourhoods, echo = FALSE}
+
+#Looking at Neighbourhood effects - there are differences between neighbourhoods
+df %>% 
+  group_by(Neighbourhood) %>%
+  summarize(No_show = mean(No_show), n = n()) %>%
+    ggplot(aes(reorder(Neighbourhood, No_show), No_show))+
+    geom_bar(stat = "identity")+
+    coord_flip()+
+    labs(title = "No-show proportion by neighbourhood",
+       x = "Neighbourhood", 
+       y = "Proportion No-shows")
+  
+
+#Top 5 no-show areas - low n
+df %>% 
+  group_by(Neighbourhood) %>%
+  summarize(No_show = mean(No_show), n = n()) %>%
+  arrange(-No_show) %>%
+  top_n(5, No_show) %>%
+  knitr::kable(format = "markdown", digits = 3)
+
+#Bottom 5 no-show areas - also low n
+df %>% 
+  group_by(Neighbourhood) %>%
+  summarize(No_show = mean(No_show), n = n()) %>%
+  arrange(No_show) %>%
+  top_n(5, -No_show)%>%
+  knitr::kable(format = "markdown", digits = 3)
+
+#Bottom n areas - bottom 5 have fewer than 50 appointments each
+df %>% 
+  group_by(Neighbourhood) %>%
+  summarize(No_show = mean(No_show), n = n()) %>%
+  arrange(n) %>%
+  top_n(10, -n)%>%
+  knitr::kable(format = "markdown", digits = 3)
+
+
+#There is variation between neighbourhoods that is not explained by number of appointments from that neighbouthood
+nhood<- df %>% 
+  group_by(Neighbourhood) %>%
+  summarize(No_show = mean(No_show), n = n()) %>%
+    ggplot(aes(n, No_show))+
+    geom_point()+
+    geom_smooth(method = "auto", se = FALSE)+
+    labs(title = "No-show proportion by neighbourhood population",
+       x = "Neighbourhood population", 
+       y = "Proportion No-shows")
+
+nhood_filter<- df %>% 
+  group_by(Neighbourhood) %>%
+  summarize(No_show = mean(No_show), n = n()) %>%
+  filter(n>50) %>%
+    ggplot(aes(n, No_show))+
+    geom_point()+
+    geom_smooth(method = "auto", se = FALSE)+
+    labs(title = "No-show proportion by neighbourhood population",
+         subtitle = "Filtered for more than 50 appointments",
+       x = "Neighbourhood population", 
+       y = "Proportion No-shows")
+
+grid.arrange(nhood, nhood_filter, ncol = 1)#,
+             #widths = c(2.5, 2, 2))
+
+#Group by neighbourhood group, define variable
+Nhood_quartiles<- df %>% 
+  group_by(Neighbourhood) %>%
+  summarize(No_show = mean(No_show), n = n()) %>%
+  select(No_show) %>%
+  summary() %>%
+  as.data.frame() %>%
+  slice(c(2, 3, 5)) %>%
+  mutate(quartiles = str_sub(Freq, start = -8)) %>% 
+  .$quartiles %>%
+  as.numeric(digits = 4)
+
+names(Nhood_quartiles)<- c("1st quartile", "Median", "Third Quartile")
+
+df %>% 
+  group_by(Neighbourhood) %>%
+  summarize(No_show = mean(No_show), n = n()) %>%
+  mutate(Nhood_bin = if_else(No_show > median(Nhood_quartiles), 
+                             if_else(No_show > max(Nhood_quartiles), "Fourth quartile", "Third quartile"), 
+                             if_else(No_show > min(Nhood_quartiles), "Second quartile", "First quartile")),
+         Nhood_bin = factor(Nhood_bin, levels = c("First quartile", "Second quartile", "Third quartile", "Fourth quartile"), ordered = TRUE)) %>%
+    ggplot(aes(reorder(Neighbourhood, No_show), No_show, fill = Nhood_bin))+
+    geom_bar(stat = "identity")+
+    scale_fill_manual("Neighbourhood Quartile", values = c("steelblue", "lightblue", "grey50", "grey10"))+
+    coord_flip()+    
+    labs(title = "No-show proportion by neighbourhood",
+       x = "Neighbourhood", 
+       y = "Proportion No-shows")
+  
+Nhood_bin<- df %>% 
+  group_by(Neighbourhood) %>%
+  summarize(No_show = mean(No_show), n = n()) %>%
+  mutate(Nhood_bin = if_else(No_show > median(Nhood_quartiles), 
+                             if_else(No_show > max(Nhood_quartiles), "Fourth_quartile", "Third_quartile"), 
+                             if_else(No_show > min(Nhood_quartiles), "Second_quartile", "First_quartile")),
+         Nhood_bin = factor(Nhood_bin, levels = c("First_quartile", "Second_quartile", "Third_quartile", "Fourth_quartile"), ordered = TRUE)) %>%
+  select(Neighbourhood, Nhood_bin)
+ 
+  
+```
+
+### Previously missed appointments
+
+```{r pastnoshows, echo = FALSE}
+#No show if patient missed a past appointment
+df %>%
+  arrange(AppointmentDay) %>%
+  group_by(PatientId) %>%
+  mutate(PastNo_show = ifelse(cumsum(No_show)-1 <0, 0, cumsum(No_show)-1)) %>%
+  ungroup() %>%
+  arrange(PatientId, -PastNo_show) %>%
+  group_by(PastNo_show) %>%
+  summarize(n = n(), No_show = mean(No_show)) %>%
+  knitr::kable()
+  
+#Show mean likelihood of missing appointment if missed past appointents
+df %>%
+  arrange(AppointmentDay) %>%
+  group_by(PatientId) %>%
+  mutate(PastNo_show = ifelse(cumsum(No_show)-1 <0, 0, cumsum(No_show)-1)) %>%
+  ungroup() %>%
+  group_by(PastNo_show) %>%
+  summarize(n = n(), No_show = mean(No_show)) %>%
+  ggplot(aes(PastNo_show, No_show))+
+  geom_point()+
+  geom_smooth(method = "auto", se = FALSE)+
+  scale_y_continuous(limits = c(0,1.05))+
+  labs(title = "No-show proportion by past missed appointments",
+     x = "Number of missed appointments", 
+     y = "Proportion No-shows")
+
+#Select highest no-shows to validate number of no-shows
+TopNo_shows<- df %>%
+  arrange(AppointmentDay) %>%
+  group_by(PatientId) %>%
+  mutate(PastNo_show = ifelse(cumsum(No_show)-1 <0, 0, cumsum(No_show)-1)) %>%
+  ungroup() %>%
+  filter(PastNo_show %in% 14:17) %>% 
+  select(PatientId) %>% 
+  mutate(PatientId = as.character(PatientId)) %>%
+  distinct() %>%
+  .$PatientId
+
+#Validating highest number of cumulative No-shows
+df %>%
+  arrange(AppointmentDay) %>%
+  group_by(PatientId) %>%
+  mutate(PastNo_show = ifelse(cumsum(No_show)-1 <0, 0, cumsum(No_show)-1)) %>%
+  ungroup() %>%
+  mutate(PatientId = as.character(PatientId)) %>%
+  filter(PatientId %in% c(TopNo_shows)) %>%
+  ggplot(aes(AppointmentDay, PastNo_show, color = PatientId))+
+  scale_color_manual("Top-3 No-show Patient IDs", values = c("steelblue", "grey50", "grey10"))+
+  geom_line(size = 1)+
+   labs(title = "Cumulative No-shows by Appointment Date",
+     x = "Appointment Date", 
+     y = "Cumulative No-shows")
+
+#appears as though No-shows cumulate correctly based on the input data. 
+
+```
+
+### Medical Information
+
+```{r medical, echo = FALSE}
+
+#Make a subset of data with preexisting conditions tidy as one variable. Observe each as an average against dependent variable, as well as the sum. Start with grouping by dependent variable and then taking mean of each and total sum. 
+df %>% 
+  group_by(No_show) %>%
+  summarize(Hypertension = mean(Hypertension),
+            Diabetes = mean(Diabetes), 
+            Alcoholism = mean(Alcoholism),
+            Handicap = mean(Handicap),
+            Scholarship = mean(Scholarship),
+            PreExisting = mean(c(Hypertension, Diabetes, Alcoholism, Handicap))) %>%
+  pivot_longer(c(Hypertension, Diabetes, Alcoholism, Handicap, Scholarship, PreExisting), names_to = "Condition", values_to = "Proportion", names_repair = "minimal") %>%
+    ggplot(aes(reorder(Condition, Proportion), Proportion, fill = No_show))+
+    geom_bar(stat = "identity", position = "dodge")+
+    scale_fill_manual("No-show", values = c("steelblue", "grey50"))+
+    coord_flip()+    
+    labs(title = "No-show proportion by Medical Condition",
+       x = "Condition", 
+       y = "Proportion No-shows")
+
+```
+
+### Other variables
+
+```{r other, echo = FALSE}
+
+df %>% 
+  group_by(No_show) %>%
+  summarize(Scholarship = mean(Scholarship), 
+            SMS_received = mean(SMS_received)) %>%
+  pivot_longer(c(Scholarship, SMS_received), names_to = "Protective", values_to = "Proportion", names_repair = "minimal") %>%
+    ggplot(aes(reorder(Protective, Proportion), Proportion, fill = No_show))+
+    geom_bar(stat = "identity", position = "dodge")+
+    scale_fill_manual("No-show", values = c("steelblue", "grey50"))+
+    labs(title = "No-show proportion by Other Outcomes",
+       x = "Outcome", 
+       y = "Proportion No-shows")
+  #coord_flip()
+
+
+#Likely - some older patients with very low likelihood of missing session did not receive SMS reminders, or younger patients who are more likely to miss session also received SMS reminder. Maybe people who opt for sms reminders are less organized in general. Either way - likely selection bias. 
+df %>% 
+  group_by (AppointmentDay) %>%
+  summarize(SMS_received = mean(SMS_received), 
+            BookingDifference = mean(BookingDifference), 
+            No_show = mean(No_show)) %>%
+  ggplot(aes(AppointmentDay, SMS_received))+
+  geom_point(stat = "identity")+
+  geom_smooth(aes(x = AppointmentDay, y = No_show), method = "auto", span = 0.4)+
+  geom_line(aes(x = AppointmentDay, y = No_show), color = "darkred")+
+  scale_color_manual("No-show")
+
+#Check which days there were no SMS's sent out
+SMS_down<- df %>% 
+  group_by (AppointmentDay) %>%
+  summarize(SMS_received = mean(SMS_received), 
+            BookingDifference = mean(BookingDifference), 
+            No_show = mean(No_show)) %>%
+  filter(SMS_received == 0) %>%
+  select(AppointmentDay) %>%
+  .$AppointmentDay
+  
+#Downtime in SMSes does not explain variation
+df %>% 
+  filter(!AppointmentDay %in% SMS_down) %>%
+  group_by(No_show) %>%
+  summarize(Scholarship = mean(Scholarship), 
+            SMS_received = mean(SMS_received)) %>%
+  pivot_longer(c(Scholarship, SMS_received), names_to = "Protective", values_to = "Proportion", names_repair = "minimal") %>%
+    ggplot(aes(reorder(Protective, Proportion), Proportion, fill = No_show))+
+    geom_bar(stat = "identity", position = "dodge")+
+    scale_fill_manual("No-show", values = c("steelblue", "grey50"))+
+    labs(title = "No-show proportion by Other Outcomes", 
+         subtitle = "Filtered out non-SMS days",
+       x = "Outcome", 
+       y = "Proportion No-shows")
+
+#Look as SMS reminders for each appointment type - They aren't sent for walk-ins, which already have much lower no-show rates. For apointments within 1 week there is no difference, and for long-term appointments they make patients about 6% more likely to show up to their appointments. 
+df %>%
+  mutate(SMS_received = ifelse(SMS_received == 0, FALSE, TRUE),
+         AppointmentType = ifelse(BookingDifference > 1, ifelse(BookingDifference > 168, "Long-term", "Within one week"), "Walk-in"))%>%
+  group_by(AppointmentType, SMS_received) %>%
+  summarize(No_show = mean(No_show)) %>%
+    ggplot(aes(reorder(AppointmentType, No_show), No_show, fill = SMS_received))+
+    geom_bar(stat = "identity", position = "dodge")+
+    scale_fill_manual("SMS Received", values = c("steelblue", "grey50"))+
+    labs(title = "No-show proportion by appointment type and SMS receipt",
+       x = "Appointment Type", 
+       y = "Proportion No-shows")
+
+
+```
+
+Displaying movies with the lowest average rating we see that most of the bottom movies have few ratings as well.
+
+The insight we get from displaying the best and worst movies is that we have confirmed the intuition that ratings vary by movie, and that movies with very high or very low scores have few ratings. The latter finding indicates that regularizing can improve the model's predictions. 
+
+### User Effects
+This section explores the possibility of user effects, and considers the relationship between users' average movie ratings and the number of ratings they have provided.
+
+```{r define_df, echo = FALSE}
+
+ml_df <- df %>%
+  filter (Age < 100) %>%
+  left_join(Nhood_bin, by = "Neighbourhood") %>%
+  arrange(AppointmentDay) %>%
+  group_by(PatientId) %>%
+  mutate(PastNo_show = ifelse(cumsum(No_show)-1 <0, 0, cumsum(No_show)-1)) %>%
+  ungroup() %>%
+  group_by(PatientId) %>%
+  mutate(AppointmentsPerDay = n() / duration) %>%
+  ungroup() %>%
+  mutate(AppointmentType = ifelse(BookingDifference > 1, ifelse(BookingDifference > 168, "Long_term", "Within_week"), "Walk_in"),
+         No_show = ifelse(No_show == FALSE, "Present", "No_show")) %>%
+  select(-c(PatientId, AppointmentID, ScheduledDay, AppointmentDay, ScheduledWeekDay, AppointmentType, Neighbourhood, Alcoholism, Handicap, Gender))
+
+#Variable formatting following from insights: 
+#Drop scheduling weekday variables
+#Drop alcoholism and handicap
+#Filter out one person who is 115 years old
+#Take out PatientId and appointmentID
+#Take out gender
+#Drop scheduledDay and appointmentDay because they are effectively unique identifiers
+#Drop difference variable and keep intuitive bin
+#Add variable for number of appointments per day
+#Add Neighbourhood bins and drop neighbourhood
+#Add cumulative missed appointments
+#No_show can't be TRUE/FALSE
+
+
+```
+
+
+```{r preprocessing}
+
+##Preprocessing
+
+#Categorized variables
+cat_list <- c("AppointmentWeekDay", "Nhood_bin", "No_show")
+ml_df[cat_list] <- lapply(ml_df[cat_list], factor)
+
+#Center and scale numeric columns
+#Standardized Variables
+stand_list <- c("Age", "ScheduledHour", "PastNo_show", "AppointmentsPerDay", "BookingDifference") 
+
+stand<- preProcess(ml_df[stand_list], method = c("center", "scale"))
+print(stand)
+summary(ml_df[stand_list])
+ml_df[stand_list]<- predict(stand, ml_df[stand_list])
+
+
+#Variables with no feature engineering
+noeng_list <- c("Scholarship", "Hypertension", "Diabetes", "SMS_received")
+
+#confirm that all variables are accounted for. 
+length(colnames(ml_df)) == length(c(stand_list, cat_list, noeng_list))
+
+#Confirm that all numeric variables are standardized
+lapply(ml_df[stand_list], (hist))
+
+#Confirm that variable names are acceptable
+make.names(c(lapply(ml_df[cat_list], levels)), unique = TRUE)
+
+```
+  
+
+## Insights gained
+**Take out:**
+* Date variables amount to unique identifiers. Other unique identifiers are PatientId and AppointmentId.  
+* BookingDifference and Neighbourhood are replaced by binned variables
+* Handicap and Alcoholism showed no variation with No-shows
+* Filter one patient that was supposedly 115 years old
+
+## Modeling approach
+The model will follow the following formula to predict movie scores.  
+
+$Y_{u,i} = μ + b_i +b_u + ∑k = 1^{K}x_{u,i}β_{k} + ε_{u,i}$, with  $x^{k}_{u,i}=1$ if $g_{u,i}$ is genre $k$  
+
+It will calculate movie effects $b_i$, user effects $b_u$, and genre effects $k$ that summarize genre scores for all genres that apply to a particular movie rating by a user.  
+
+### Evaluating models
+Accuracy
+Precision and Recall (Sensitivity)
+
+
+```{r partition, echo = FALSE, include = FALSE}
+
+set.seed(1)
+#Ceate index to split in test and training sets
+test_index <- createDataPartition(y = ml_df$No_show, times = 1, 
+                                   p = 0.2, list = FALSE)
+train_df <- ml_df[-test_index,] #defining train set
+test_df <- ml_df[test_index,] #defining test set
+
+```
+
+# Results
+A movie recommendation system based on the presented approach produces the following RMSE:  
+
+```{r train_controls, echo = FALSE}
+
+#Set training control method for both Conservative and Non-Conservative models
+ctrl<- trainControl(method = "cv", #Set method to 10-fold cv
+                    classProbs = TRUE, #Estimate class probabilities when training
+                    summaryFunction = twoClassSummary, #Assign type of summary (allows for producing ROC curves)
+                    savePredictions = "final") #Allows for using probability threshold tuning
+
+```
+
+
+```{r model, echo = FALSE}
+
+model<- "rpart"
+ctrl$sampling<- NULL
+base_fits <- lapply(model, function(sampling_method){ 
+	print(sampling_method)
+	train(No_show ~ .,
+              data = train_df,
+              method = model,
+	            metric = "ROC",
+	            trControl = ctrl)
+}) 
+
+names(base_fits)<- "rpart - no sampling"
+
+ROC <- sapply(base_fits, function(model){ 
+	print(model)
+	ROC<- mean(model$results$ROC)
+	matrix(ROC)
+
+})
+ROC
+
+
+```
+
+
+```{r sampling, echo = FALSE}
+
+#Test different sampling strategies
+model<- c("rpart")
+
+sampling_method<- c("down", "up", "rose", "smote")
+ctrl$sampling<- sampling_method
+
+sampling_fits <- lapply(sampling_method, function(sampling_method){ 	print(sampling_method)
+	train(No_show ~ .,
+              data = train_df,
+              method = model,
+	            metric = "ROC",
+	            trControl = ctrl)
+}) 
+    
+names(sampling_fits) <- paste(model,"-", sampling_method)
+
+#Create matrix of accuracy
+sampling_ROC <- sapply(sampling_fits, function(model){ 
+	print(model)
+	ROC<- mean(model$results$ROC)
+	matrix(ROC)
+
+})
+
+ROC<- append(ROC, sampling_ROC)
+
+ROC_df<- data.frame(ROC)
+ROC_df$model<- names(ROC)
+rownames(ROC)<- NULL
+
+ROC_best_df<- ROC_df %>%
+  arrange(-ROC) %>%
+  top_n(10, ROC)
+
+ROC_best_df %>% knitr::kable(format = "markdown", digits = 3)
+
+best_model<- ROC_best_df$model[which(ROC_best_df$ROC==max(ROC))]
+best_model
+best_model<- sampling_fits$`rpart smote`
+
+```
+
+
+```{r tree}
+
+tree <- sampling_fits$`rpart - smote`$finalModel
+# Visualize the decision tree with rpart.plot
+rpart.plot(tree, box.palette="RdBu", shadow.col="gray", nn=TRUE)
+
+```
+
+##Testing different models
+
+
+```{r models, echo = FALSE}
+
+#Test different sampling strategies
+model<- c("glm", "naive_bayes",  "svmLinear", 
+                "knn", "kknn",
+                "mlp", "monmlp",
+                "adaboost", "gbm",
+                "svmRadial", "svmRadialCost", "svmRadialSigma",
+                "svmPoly", "multinom", "avNNet")
+
+sampling_method<- c("smote")
+ctrl$sampling<- sampling_method
+
+model_fits <- lapply(model, function(model){ 
+	print(model)
+	train(No_show ~ .,
+              data = train_df,
+              method = model,
+	            metric = "ROC",
+	            trControl = ctrl)
+}) 
+    
+names(model_fits) <- paste(model,"-", sampling_method)
+
+#Create matrix of accuracy
+model_ROC <- sapply(model_fits, function(model){ 
+	print(model)
+	ROC<- mean(model$results$ROC)
+	matrix(ROC)
+
+})
+model_ROC
+ROC<- append(ROC, model_ROC)
+
+ROC_df<- data.frame(ROC)
+ROC_df$model<- names(ROC)
+rownames(ROC)<- NULL
+
+ROC_best_df<- ROC_df %>% 
+  arrange(-ROC) %>%
+  top_n(10, ROC) %>% 
+  knitr::kable(format = "markdown", digits = 3)
+  
+ROC_best_df
+
+best_model<- ROC_best_df$model[which(ROC_best_df$ROC==max(ROC))]
+best_model
+
+best_model<- model_fits$`gbm - smote`
+
+```
+
+
+
+```{r OS, echo = FALSE}
+
+# Calculate the optimum threshold value and set prediction thresholds
+resample_stats <- thresholder(best_model,  threshold = seq(.01, .99, by = 0.01), final = TRUE)
+
+stats <- select(resample_stats,prob_threshold,Sensitivity,Precision)
+stats <- gather(stats,"Case","Value",2:3)
+
+# sensitivity_threshold is set here
+sensitivity_threshold<- .15
+pred_threshold <- resample_stats %>% filter(Sensitivity>=sensitivity_threshold) %>% filter(Precision==max(Precision)) %>% .$prob_threshold
+
+
+pred_threshold<- pred_threshold
+#Visualize optimal threshold, and trade-off between precision and sensitivity for training set
+ggplot(stats,aes(x=prob_threshold,y=Value))+
+  geom_point(aes(col=Case))+
+  labs(title="Precision/Sensitivity vs Threshold Upsampled Undercall Model", 
+       y="Precision / Sensitivity", 
+       x="Probability Threshold")+
+  geom_vline(xintercept=pred_threshold, linetype="dotted")
+
+
+```
+
+
+```{r metrics, echo = FALSE}
+
+
+#Predict values and report on model metrics
+
+#Predict values on testing partition based on optimal probability threshold
+PRbest <- predict(best_model, test_df, type = "prob")
+pred_best <- ifelse(PRbest$No_show >= pred_threshold, "No_show", "Present") %>% as.factor()
+
+
+```
+
+
+
+```{r roc, echo = FALSE}
+#Plot ROC curve and ROC AUC confidence interval for test partition
+rpart.roc <- roc(test_df$No_show, PRbest$No_show)
+ci.thresholds(rpart.roc, thresholds = "best")
+plot.roc(rpart.roc, print.auc = TRUE, print.thres = "best", main = "Undercall, C5.0, weight, knn", legacy.axes = TRUE)
+
+#Call confusion matrix
+confusionMatrix(pred_best, test_df$`No_show`, mode = "prec_recall")
+
+#Calculate and visualize variable importance
+imp <- varImp(best_model)
+ggplot(imp)+ggtitle("Model - Variables of importance")
+
+
+```
+
+
+```{r lift, echo = FALSE}
+#----------------------Calculate lift curves and visualize confusion matrix----------------------
+
+#Create dataframe for lift curves
+pr_metric_df<- data.frame(obs = test_df$No_show, prob = PRbest$No_show, pred = pred_best)
+
+#Calculate and visualize lift curves
+lift<- lift(obs ~ prob, data = pr_metric_df)
+ggplot(lift)+
+  labs(title = "Lift Curve, Undercall Model")
+
+```
+
+
+```{r confmat, echo = FALSE}
+
+#Visualize confusion matrix
+pr_metric_df %>% 
+  #mutate(obs=factor(obs,levels=c("TRUE","FALSE"),ordered=TRUE)) %>%
+  ggplot(aes(x=obs,y=prob,color=pred))+
+  geom_jitter(width = 0.3, height = 0.00)+
+    scale_y_continuous(breaks = c(seq.int(0.0, 1, 0.2)))+
+    geom_vline(xintercept = 1.5, linetype = "dashed")+
+    geom_hline(yintercept = pred_threshold, linetype = "dashed")+
+    scale_color_manual(values = c("steelblue", "grey45"), name = "Prediction", labels = c("Undercall", "In-range"))+
+    geom_label(aes(x = 0.65, y = 0.9, label = str_wrap("True Positives", width = 8)), color = "black")+
+    geom_label(aes(x = 0.65, y = 0.1, label = str_wrap("False Negatives", width = 8)), color = "black")+
+    geom_label(aes(x = 2.35, y = 0.1, label = str_wrap("True Negatives", width = 8)), color = "black")+
+    geom_label(aes(x = 2.35, y = 0.9, label = str_wrap("False Positives", width = 8)), color = "black")+
+    labs(title = "Confusion Matrix Visual Summary",
+         subtitle = "Undercall Model",
+         y = "Predicted Probability of Undercall",
+         x = "Observed Values")
+
+#             weights = c_weights_adv)
+
+```
+
+## Conclusions
+Additional exploration could be done on the effects from timing of rating and movie release date. This could potentially yield additional improvements to the model's RMSE. Matrix factorization could also improve scores further. 
+
+```{r tuning, eval = FALSE, echo = FALSE, include = FALSE}
+
+# #This code was used for tuning the lambda parameter that is defined in line 186
+# test_index <- createDataPartition(y = m#l_df$rating, times = 1, #Create index to split in test and training sets
+#                                   p = 0.2, list = FALSE)
+# train_set <- ml_df[-test_index,] #defining train set
+# test_set <- ml_df[test_index,] #defining test set
+# test_set <- test_set %>% 
+#      semi_join(train_set, by = "movieId") %>% #Ensuring that all movies are present in both train and test set to avoid NA values
+#      semi_join(train_set, by = "userId") #Ensuring that all users are present in both train and test set to avoid NA values
+# 
+# 
+# mu <- mean(train_set$rating) 
+# 
+# #Regularized movie and user effect
+# lambdas <- seq(4.5, 5.5, 0.1)
+# rmses <- sapply(lambdas, function(l){
+#      mu <- mean(train_set$rating)
+#      b_i <- train_set %>%
+#           left_join(b_g, by="movieId") %>%
+#           group_by(movieId) %>%
+#           summarize(b_i = sum(rating - mu - b_g)/(n()+l))
+#      b_u <- train_set %>% 
+#           left_join(b_g, by="movieId") %>%
+#           left_join(b_i, by = "movieId") %>% 
+#           group_by(userId) %>%
+#           summarize(b_u = sum(rating - mu - b_g - b_i)/(n()+l))
+#      predicted_ratings <- 
+#           test_set %>% 
+#           left_join(b_g, by = "movieId") %>%
+#           left_join(b_i, by = "movieId") %>%
+#           left_join(b_u, by = "userId") %>%
+#           mutate(pred = mu + b_i + b_u + b_g) %>%
+#           .$pred
+#      return(RMSE(predicted_ratings, test_set$rating))
+# })
+# 
+# qplot(lambdas, rmses)  
+# 
+# min(rmses)
+# lambda <- lambdas[which.min(rmses)]
+# lambda
+
+
+```
+
