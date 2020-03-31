@@ -747,8 +747,8 @@ ctrl<- trainControl(method = "cv", #Set method to 10-fold cv
 
 model<- "rpart"
 ctrl$sampling<- NULL
-base_fits <- lapply(model, function(sampling_method){ 
-	print(sampling_method)
+base_fits <- lapply(model, function(model){ 
+	print(model)
 	train(No_show ~ .,
               data = train_df,
               method = model,
@@ -810,9 +810,10 @@ ROC_best_df %>% knitr::kable(format = "markdown", digits = 3)
 
 best_model<- ROC_best_df$model[which(ROC_best_df$ROC==max(ROC))]
 best_model
-best_model<- sampling_fits$`rpart smote`
+best_model<- sampling_fits$`rpart - smote`
 
 ```
+
 
 
 ```{r tree}
@@ -823,32 +824,103 @@ rpart.plot(tree, box.palette="RdBu", shadow.col="gray", nn=TRUE)
 
 ```
 
+
+```{r importance, echo = FALSE}
+
+#load.image(initial_ml)
+
+#Calculate and visualize variable importance
+imp <- varImp(best_model)
+
+ggplot(imp)+ggtitle("Model - Variables of importance")
+
+important<- imp$importance %>%
+  mutate(Feature = rownames(imp$importance)) %>%
+  arrange(-Overall) 
+
+important %>%
+  select(Feature, Overall) %>%
+  knitr::kable(format = "markdown", digits = 2)
+
+important_vars<- important %>% 
+  filter(Overall > 2) %>%
+  select(Feature) %>%
+  .$Feature
+
+important_vars <- str_remove(string = important_vars, pattern = "\\.[:alpha:]{1}")
+important_vars <- append(important_vars, "No_show") #Add dependent variable
+
+```
+
+```{r important_fit, echo = FALSE}
+
+model<- "rpart"
+ctrl$sampling<- NULL
+train_df_imp<- train_df[,important_vars]
+
+imp_fits <- lapply(model, function(model){ 
+	print(model)
+	train(No_show ~ .,
+              data = train_df_imp,
+              method = model,
+	            metric = "ROC",
+	            trControl = ctrl)
+}) 
+
+names(imp_fits)<- "rpart - no sampling - important vars"
+
+imp_ROC <- sapply(imp_fits, function(model){ 
+	print(model)
+	ROC<- mean(model$results$ROC)
+	matrix(ROC)
+
+})
+
+ROC<- append(ROC, imp_ROC)
+
+ROC_df<- data.frame(ROC)
+ROC_df$model<- names(ROC)
+rownames(ROC)<- NULL
+
+ROC_best_df<- ROC_df %>%
+  arrange(-ROC) %>%
+  top_n(10, ROC)
+
+ROC_best_df %>% knitr::kable(format = "markdown", digits = 3)
+
+best_model<- ROC_best_df$model[which(ROC_best_df$ROC==max(ROC))]
+best_model
+
+#best_model<- sampling_fits$`rpart - smote`
+
+```
+
+
 ##Testing different models
+To 
 
 
 ```{r models, echo = FALSE}
 
 #Test different sampling strategies
-model<- c("glm", "naive_bayes",  "svmLinear", 
+model<- c("naive_bayes",  "svmLinear", 
                 "knn", "kknn",
                 "mlp", "monmlp",
-                "adaboost", "gbm",
-                "svmRadial", "svmRadialCost", "svmRadialSigma",
-                "svmPoly", "multinom", "avNNet")
-
-sampling_method<- c("smote")
+                "gbm", "svmRadial", "svmRadialCost", "svmRadialSigma", "svmPoly", "multinom", "avNNet", "glm")
+ 
+sampling_method<- NULL
 ctrl$sampling<- sampling_method
 
 model_fits <- lapply(model, function(model){ 
 	print(model)
 	train(No_show ~ .,
-              data = train_df,
+              data = train_df_imp[1:10000,],
               method = model,
 	            metric = "ROC",
 	            trControl = ctrl)
 }) 
     
-names(model_fits) <- paste(model,"-", sampling_method)
+names(model_fits) <- paste(model, "- no sampling - important vars")
 
 #Create matrix of accuracy
 model_ROC <- sapply(model_fits, function(model){ 
@@ -857,6 +929,7 @@ model_ROC <- sapply(model_fits, function(model){
 	matrix(ROC)
 
 })
+
 model_ROC
 ROC<- append(ROC, model_ROC)
 
@@ -864,23 +937,24 @@ ROC_df<- data.frame(ROC)
 ROC_df$model<- names(ROC)
 rownames(ROC)<- NULL
 
-ROC_best_df<- ROC_df %>% 
+ROC_df %>% 
   arrange(-ROC) %>%
-  top_n(10, ROC) %>% 
+  #top_n(10, ROC) %>% 
   knitr::kable(format = "markdown", digits = 3)
-  
-ROC_best_df
 
-best_model<- ROC_best_df$model[which(ROC_best_df$ROC==max(ROC))]
+best_model<- ROC_df$model[which(ROC_df$ROC==max(ROC))]
 best_model
 
-best_model<- model_fits$`gbm - smote`
+best_model<- model_fits$`gbm no sampling - important vars`
+
+save.image("initial_ml.Rdata")
 
 ```
 
 
 
-```{r OS, echo = FALSE}
+
+```{r threshold, echo = FALSE}
 
 # Calculate the optimum threshold value and set prediction thresholds
 resample_stats <- thresholder(best_model,  threshold = seq(.01, .99, by = 0.01), final = TRUE)
@@ -892,8 +966,6 @@ stats <- gather(stats,"Case","Value",2:3)
 sensitivity_threshold<- .15
 pred_threshold <- resample_stats %>% filter(Sensitivity>=sensitivity_threshold) %>% filter(Precision==max(Precision)) %>% .$prob_threshold
 
-
-pred_threshold<- pred_threshold
 #Visualize optimal threshold, and trade-off between precision and sensitivity for training set
 ggplot(stats,aes(x=prob_threshold,y=Value))+
   geom_point(aes(col=Case))+
@@ -929,10 +1001,6 @@ plot.roc(rpart.roc, print.auc = TRUE, print.thres = "best", main = "Undercall, C
 #Call confusion matrix
 confusionMatrix(pred_best, test_df$`No_show`, mode = "prec_recall")
 
-#Calculate and visualize variable importance
-imp <- varImp(best_model)
-ggplot(imp)+ggtitle("Model - Variables of importance")
-
 
 ```
 
@@ -954,22 +1022,22 @@ ggplot(lift)+
 ```{r confmat, echo = FALSE}
 
 #Visualize confusion matrix
-pr_metric_df %>% 
-  #mutate(obs=factor(obs,levels=c("TRUE","FALSE"),ordered=TRUE)) %>%
-  ggplot(aes(x=obs,y=prob,color=pred))+
-  geom_jitter(width = 0.3, height = 0.00)+
-    scale_y_continuous(breaks = c(seq.int(0.0, 1, 0.2)))+
-    geom_vline(xintercept = 1.5, linetype = "dashed")+
-    geom_hline(yintercept = pred_threshold, linetype = "dashed")+
-    scale_color_manual(values = c("steelblue", "grey45"), name = "Prediction", labels = c("Undercall", "In-range"))+
-    geom_label(aes(x = 0.65, y = 0.9, label = str_wrap("True Positives", width = 8)), color = "black")+
-    geom_label(aes(x = 0.65, y = 0.1, label = str_wrap("False Negatives", width = 8)), color = "black")+
-    geom_label(aes(x = 2.35, y = 0.1, label = str_wrap("True Negatives", width = 8)), color = "black")+
-    geom_label(aes(x = 2.35, y = 0.9, label = str_wrap("False Positives", width = 8)), color = "black")+
-    labs(title = "Confusion Matrix Visual Summary",
-         subtitle = "Undercall Model",
-         y = "Predicted Probability of Undercall",
-         x = "Observed Values")
+# pr_metric_df %>% 
+#   #mutate(obs=factor(obs,levels=c("TRUE","FALSE"),ordered=TRUE)) %>%
+#   ggplot(aes(x=obs,y=prob,color=pred))+
+#   geom_jitter(width = 0.3, height = 0.00)+
+#     scale_y_continuous(breaks = c(seq.int(0.0, 1, 0.2)))+
+#     geom_vline(xintercept = 1.5, linetype = "dashed")+
+#     geom_hline(yintercept = pred_threshold, linetype = "dashed")+
+#     scale_color_manual(values = c("steelblue", "grey45"), name = "Prediction", labels = c("Undercall", "In-range"))+
+#     geom_label(aes(x = 0.65, y = 0.9, label = str_wrap("True Positives", width = 8)), color = "black")+
+#     geom_label(aes(x = 0.65, y = 0.1, label = str_wrap("False Negatives", width = 8)), color = "black")+
+#     geom_label(aes(x = 2.35, y = 0.1, label = str_wrap("True Negatives", width = 8)), color = "black")+
+#     geom_label(aes(x = 2.35, y = 0.9, label = str_wrap("False Positives", width = 8)), color = "black")+
+#     labs(title = "Confusion Matrix Visual Summary",
+#          subtitle = "Undercall Model",
+#          y = "Predicted Probability of Undercall",
+#          x = "Observed Values")
 
 #             weights = c_weights_adv)
 
