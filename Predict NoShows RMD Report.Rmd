@@ -25,7 +25,7 @@ if(!require(pROC)) install.packages("pROC", repos = "http://cran.us.r-project.or
 if(!require(rpart.plot)) install.packages("rpart.plot", repos = "http://cran.us.r-project.org") #For binning variables automatically
 if(!require(rpart)) install.packages("rpart", repos = "http://cran.us.r-project.org") #For binning variables automatically
 if(!require(DMwR)) install.packages("DMwR", repos = "http://cran.us.r-project.org") #For binning variables automatically - check if this is an error
-library()
+
 
 url<- "https://github.com/kulsrud/PredictNoShows/raw/master/" 
 file<- "KaggleV2-May-2016.csv"
@@ -802,7 +802,7 @@ ROC_df<- data.frame(ROC)
 ROC_df$model<- names(ROC)
 rownames(ROC)<- NULL
 
-ROC_best_df<- ROC_df %>%
+ROC_best_df<- ROC_df %>% #Don't need ROC_best_df
   arrange(-ROC) %>%
   top_n(10, ROC)
 
@@ -818,9 +818,8 @@ best_model<- sampling_fits$`rpart - smote`
 
 ```{r tree}
 
-tree <- sampling_fits$`rpart - smote`$finalModel
 # Visualize the decision tree with rpart.plot
-rpart.plot(tree, box.palette="RdBu", shadow.col="gray", nn=TRUE)
+rpart.plot(sampling_fits$`rpart - smote`$finalModel, box.palette="RdBu", shadow.col="gray", nn=TRUE)
 
 ```
 
@@ -903,10 +902,10 @@ To
 ```{r models, echo = FALSE}
 
 #Test different sampling strategies
-model<- c("naive_bayes",  "svmLinear", 
+model<- ("naive_bayes",  "svmLinear", 
                 "knn", "kknn",
                 "mlp", "monmlp",
-                "gbm", "svmRadial", "svmRadialCost", "svmRadialSigma", "svmPoly", "multinom", "avNNet", "glm")
+                "gbm", "svmRadial", "svmRadialCost", "svmRadialSigma", "svmPoly", "multinom", "avNNet", "glm", "C5.0")
  
 sampling_method<- NULL
 ctrl$sampling<- sampling_method
@@ -920,7 +919,7 @@ model_fits <- lapply(model, function(model){
 	            trControl = ctrl)
 }) 
     
-names(model_fits) <- paste(model, "- no sampling - important vars")
+names(C50_fits) <- paste(model, "- no sampling - important vars")
 
 #Create matrix of accuracy
 model_ROC <- sapply(model_fits, function(model){ 
@@ -930,8 +929,8 @@ model_ROC <- sapply(model_fits, function(model){
 
 })
 
-model_ROC
-ROC<- append(ROC, model_ROC)
+C50_ROC
+ROC<- append(ROC, C50_ROC)
 
 ROC_df<- data.frame(ROC)
 ROC_df$model<- names(ROC)
@@ -939,6 +938,7 @@ rownames(ROC)<- NULL
 
 ROC_df %>% 
   arrange(-ROC) %>%
+  select(model, ROC) %>%
   #top_n(10, ROC) %>% 
   knitr::kable(format = "markdown", digits = 3)
 
@@ -947,32 +947,218 @@ best_model
 
 best_model<- model_fits$`gbm no sampling - important vars`
 
-save.image("initial_ml.Rdata")
+```
+
+###Loading past work
+
+```{r load}
+list.files(getwd(), pattern = ".Rdata")
+
+load("initial_ml.Rdata")
+
+save_version<- paste("ml-", Sys.Date(), ".Rdata", sep = "")
+save_version
+save.image(save_version)
+
+load(save_version)
+
+
+```
+
+```{r tune}
+
+model<- ROC_df %>% 
+  arrange(-ROC) %>%
+  select(model, ROC) %>%
+  top_n(2, ROC) %>% 
+  select(model) %>%
+  mutate(model = word(model, sep = " ")) %>%
+  .$model
+
+model<- append(model, "C5.0")
+model
+ 
+sampling_method<- "smote"
+ctrl$sampling<- sampling_method
+
+tune_fits <- lapply(model, function(model){ 
+	print(model)
+	train(No_show ~ .,
+              data = train_df,
+              method = model,
+	            metric = "ROC",
+	            trControl = ctrl)
+}) 
+
+names(tune_fits) <- paste(model, "- smote - full dataset")
+
+#Create matrix of accuracy
+tune_ROC <- sapply(tune_fits, function(model){ 
+	print(model)
+	ROC<- mean(model$results$ROC)
+	matrix(ROC)
+
+})
+
+tune_ROC
+
+
+ROC<- append(ROC, tune_ROC)
+
+ROC_df<- data.frame(ROC)
+ROC_df$model<- names(ROC)
+rownames(ROC)<- NULL
+
+ROC_df %>% 
+  arrange(-ROC) %>%
+  select(model, ROC) %>%
+  #top_n(10, ROC) %>% 
+  knitr::kable(format = "markdown", digits = 3)
+	
+```
+
+C5.0 has a steeper curve.
+
+Winnowing seems not to make a difference, tree and rule based model both perform well depending on winnowing or not. 
+
+```{r best_fits_results}
+limits<- c(0.72, 0.78)
+ggplot(tune_fits$`C5.0 - smote - full dataset`)+
+  scale_y_continuous(limits = limits)
+ggplot(tune_fits$`mlp - smote - full dataset`)+
+  scale_y_continuous(limits = limits)
+ggplot(tune_fits$`gbm - smote - full dataset`)+
+  scale_y_continuous(limits = limits)
+
+#grid.arrange(c50_params, mlp_params, gbm_params)
 
 ```
 
 
 
+```{r C50_tune}
+
+getModelInfo("C5.0")
+tune_fits$`C5.0 - smote - full dataset`$bestTune
+
+#model
+model<- "C5.0"
+model
+
+#sampling
+sampling_method<- "smote"
+ctrl$sampling<- sampling_method
+
+#tuning
+grid <- expand.grid(.winnow = c(FALSE), .trials=c(20, 25, 30), .model=c("rules"))
+
+C50_tune <- lapply(model, function(model){ 
+	print(model)
+	train(No_show ~ .,
+              data = train_df,
+              method = model,
+	            metric = "ROC",
+	            trControl = ctrl,
+	            tuneGrid = grid)
+}) 
+
+names(C50_tune) <- paste(model, "- smote - full dataset - tuning")
+
+ggplot(C50_tune$`C5.0 - smote - full dataset - tuning`)
+
+
+#Create matrix of accuracy
+tune_C50 <- sapply(C50_tune, function(model){ 
+	print(model)
+	ROC<- mean(model$results$ROC)
+	matrix(ROC)
+
+})
+
+tune_C50
+
+
+ROC<- append(ROC, tune_C50)
+
+ROC_df<- data.frame(ROC)
+ROC_df$model<- names(ROC)
+rownames(ROC)<- NULL
+
+ROC_df %>% 
+  arrange(-ROC) %>%
+  select(model, ROC) %>%
+  #top_n(10, ROC) %>% 
+  knitr::kable(format = "markdown", digits = 3)
+
+
+```
+
+
+```{r best}
+load(save_version)
+
+
+best_models<- list(C50_tune$`C5.0 - smote - full dataset - tuning`,
+            tune_fits$`gbm - smote - full dataset`,
+            tune_fits$`mlp - smote - full dataset`)
+
+names(best_models)<- c("C5.0", "gbm", "mlp")
+
+  
+```
+
+
 
 ```{r threshold, echo = FALSE}
 
+#Do this for each model as a function
+
 # Calculate the optimum threshold value and set prediction thresholds
-resample_stats <- thresholder(best_model,  threshold = seq(.01, .99, by = 0.01), final = TRUE)
 
-stats <- select(resample_stats,prob_threshold,Sensitivity,Precision)
-stats <- gather(stats,"Case","Value",2:3)
+precision_threshold<- .8
 
-# sensitivity_threshold is set here
-sensitivity_threshold<- .15
-pred_threshold <- resample_stats %>% filter(Sensitivity>=sensitivity_threshold) %>% filter(Precision==max(Precision)) %>% .$prob_threshold
+prob_thresholds <- sapply(best_models, function(model){ 
+print(model)
+	#calculate resampling stats
+resample_stats <- thresholder(model,threshold = seq(.01, .99, by = 0.04), final = TRUE)
+
+  #Optimize probability threshold
+prob_threshold <- resample_stats %>%
+  filter(Precision>=precision_threshold) %>%
+  filter(Sensitivity==max(Sensitivity)) %>%  
+  .$prob_threshold
+matrix(prob_threshold)
+})
+
+  #Pick out precision and sensitivity from resampled training data
+model_stats<- sapply(best_models, function(model){ 
+  stats <- thresholder(model,threshold = prob_thresholds[model$method], final = TRUE) %>% 
+  select(prob_threshold, Sensitivity, Precision) 
+matrix(stats)
+})
+
+rownames(model_stats)<- c("prob_threshold", "Sensitivity", "Precision")
+model_stats<- data.frame(t(model_stats)) %>%
+  mutate(model = colnames(model_stats)) %>%
+  mutate(Precision = as.numeric(Precision),
+         Sensitivity = as.numeric(Sensitivity)) %>%
+  rename(Model = model)
+
+
+model_stats %>% 
+  select(-prob_threshold) %>%
+  select(Model, Precision, Sensitivity) %>%
+  knitr::kable(format = "markdown", digits = 3)
+
+
 
 #Visualize optimal threshold, and trade-off between precision and sensitivity for training set
-ggplot(stats,aes(x=prob_threshold,y=Value))+
-  geom_point(aes(col=Case))+
-  labs(title="Precision/Sensitivity vs Threshold Upsampled Undercall Model", 
-       y="Precision / Sensitivity", 
-       x="Probability Threshold")+
-  geom_vline(xintercept=pred_threshold, linetype="dotted")
+# ggplot(stats,aes(x=prob_threshold,y=Value))+
+#   geom_point(aes(col=Case))+
+#   labs(title="Precision/Sensitivity vs Threshold", 
+#        y="Precision / Sensitivity", 
+#        x="Probability Threshold")+
+#   geom_vline(xintercept=pred_threshold, linetype="dotted")
 
 
 ```
@@ -980,12 +1166,12 @@ ggplot(stats,aes(x=prob_threshold,y=Value))+
 
 ```{r metrics, echo = FALSE}
 
-
+best_model<- best_models$C5.0
 #Predict values and report on model metrics
 
 #Predict values on testing partition based on optimal probability threshold
 PRbest <- predict(best_model, test_df, type = "prob")
-pred_best <- ifelse(PRbest$No_show >= pred_threshold, "No_show", "Present") %>% as.factor()
+pred_best <- ifelse(PRbest$No_show >= prob_thresholds["C5.0"], "No_show", "Present") %>% as.factor()
 
 
 ```
@@ -994,9 +1180,9 @@ pred_best <- ifelse(PRbest$No_show >= pred_threshold, "No_show", "Present") %>% 
 
 ```{r roc, echo = FALSE}
 #Plot ROC curve and ROC AUC confidence interval for test partition
-rpart.roc <- roc(test_df$No_show, PRbest$No_show)
-ci.thresholds(rpart.roc, thresholds = "best")
-plot.roc(rpart.roc, print.auc = TRUE, print.thres = "best", main = "Undercall, C5.0, weight, knn", legacy.axes = TRUE)
+
+#ci.thresholds(rpart.roc, thresholds = "best")
+plot.roc(test_df$No_show, PRbest$No_show, print.auc = TRUE, print.thres = "best", main = "C5.0, tuned", legacy.axes = TRUE)
 
 #Call confusion matrix
 confusionMatrix(pred_best, test_df$`No_show`, mode = "prec_recall")
@@ -1009,12 +1195,12 @@ confusionMatrix(pred_best, test_df$`No_show`, mode = "prec_recall")
 #----------------------Calculate lift curves and visualize confusion matrix----------------------
 
 #Create dataframe for lift curves
-pr_metric_df<- data.frame(obs = test_df$No_show, prob = PRbest$No_show, pred = pred_best)
-
-#Calculate and visualize lift curves
-lift<- lift(obs ~ prob, data = pr_metric_df)
-ggplot(lift)+
-  labs(title = "Lift Curve, Undercall Model")
+# pr_metric_df<- data.frame(obs = test_df$No_show, prob = PRbest$No_show, pred = pred_best)
+# 
+# #Calculate and visualize lift curves
+# lift<- lift(obs ~ prob, data = pr_metric_df)
+# ggplot(lift)+
+#   labs(title = "Lift Curve, Undercall Model")
 
 ```
 
@@ -1022,73 +1208,27 @@ ggplot(lift)+
 ```{r confmat, echo = FALSE}
 
 #Visualize confusion matrix
-# pr_metric_df %>% 
-#   #mutate(obs=factor(obs,levels=c("TRUE","FALSE"),ordered=TRUE)) %>%
-#   ggplot(aes(x=obs,y=prob,color=pred))+
-#   geom_jitter(width = 0.3, height = 0.00)+
-#     scale_y_continuous(breaks = c(seq.int(0.0, 1, 0.2)))+
-#     geom_vline(xintercept = 1.5, linetype = "dashed")+
-#     geom_hline(yintercept = pred_threshold, linetype = "dashed")+
-#     scale_color_manual(values = c("steelblue", "grey45"), name = "Prediction", labels = c("Undercall", "In-range"))+
-#     geom_label(aes(x = 0.65, y = 0.9, label = str_wrap("True Positives", width = 8)), color = "black")+
-#     geom_label(aes(x = 0.65, y = 0.1, label = str_wrap("False Negatives", width = 8)), color = "black")+
-#     geom_label(aes(x = 2.35, y = 0.1, label = str_wrap("True Negatives", width = 8)), color = "black")+
-#     geom_label(aes(x = 2.35, y = 0.9, label = str_wrap("False Positives", width = 8)), color = "black")+
-#     labs(title = "Confusion Matrix Visual Summary",
-#          subtitle = "Undercall Model",
-#          y = "Predicted Probability of Undercall",
-#          x = "Observed Values")
+pr_metric_df %>% 
+  mutate(obs=factor(obs, levels=c("No_show","Present"),ordered=TRUE)) %>%
+   ggplot(aes(x=obs,y=prob,color=pred))+
+   geom_jitter(width = 0.3, height = 0.00, alpha = 0.5)+
+     scale_y_continuous(breaks = c(seq.int(0.0, 1, 0.2)))+
+     geom_vline(aes(xintercept = 1.5), linetype = "dashed")+
+     geom_hline(aes(yintercept = pred_threshold), linetype = "dashed")+
+     scale_color_manual(values = c("steelblue", "grey45"), name = "Prediction", labels = c("No-Show", "Present"))+
+     # geom_label(aes(x = 0.65, y = 0.9), label = str_wrap("True Positives", width = 8), color = "black")+
+     # geom_label(aes(x = 0.65, y = 0.1, label = str_wrap("False Negatives", width = 8)), color = "black")+
+     # geom_label(aes(x = 2.35, y = 0.1, label = str_wrap("True Negatives", width = 8)), color = "black")+
+     # geom_label(aes(x = 2.35, y = 0.9, label = str_wrap("False Positives", width = 8)), color = "black")+
+     labs(title = "Confusion Matrix Visual Summary",
+          subtitle = "Undercall Model",
+          y = "Predicted Probability of No-show",
+          x = "Observed Values")
 
-#             weights = c_weights_adv)
 
 ```
 
 ## Conclusions
 Additional exploration could be done on the effects from timing of rating and movie release date. This could potentially yield additional improvements to the model's RMSE. Matrix factorization could also improve scores further. 
-
-```{r tuning, eval = FALSE, echo = FALSE, include = FALSE}
-
-# #This code was used for tuning the lambda parameter that is defined in line 186
-# test_index <- createDataPartition(y = m#l_df$rating, times = 1, #Create index to split in test and training sets
-#                                   p = 0.2, list = FALSE)
-# train_set <- ml_df[-test_index,] #defining train set
-# test_set <- ml_df[test_index,] #defining test set
-# test_set <- test_set %>% 
-#      semi_join(train_set, by = "movieId") %>% #Ensuring that all movies are present in both train and test set to avoid NA values
-#      semi_join(train_set, by = "userId") #Ensuring that all users are present in both train and test set to avoid NA values
-# 
-# 
-# mu <- mean(train_set$rating) 
-# 
-# #Regularized movie and user effect
-# lambdas <- seq(4.5, 5.5, 0.1)
-# rmses <- sapply(lambdas, function(l){
-#      mu <- mean(train_set$rating)
-#      b_i <- train_set %>%
-#           left_join(b_g, by="movieId") %>%
-#           group_by(movieId) %>%
-#           summarize(b_i = sum(rating - mu - b_g)/(n()+l))
-#      b_u <- train_set %>% 
-#           left_join(b_g, by="movieId") %>%
-#           left_join(b_i, by = "movieId") %>% 
-#           group_by(userId) %>%
-#           summarize(b_u = sum(rating - mu - b_g - b_i)/(n()+l))
-#      predicted_ratings <- 
-#           test_set %>% 
-#           left_join(b_g, by = "movieId") %>%
-#           left_join(b_i, by = "movieId") %>%
-#           left_join(b_u, by = "userId") %>%
-#           mutate(pred = mu + b_i + b_u + b_g) %>%
-#           .$pred
-#      return(RMSE(predicted_ratings, test_set$rating))
-# })
-# 
-# qplot(lambdas, rmses)  
-# 
-# min(rmses)
-# lambda <- lambdas[which.min(rmses)]
-# lambda
-
-
-```
-
+ <>
+ \/
