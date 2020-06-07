@@ -776,10 +776,17 @@ The first model uses Rpart as it is a fast-running classification model that can
 # 	            metric = "ROC",
 # 	            trControl = ctrl)
 # }) 
+<<<<<<< HEAD
 
 
 ```
 
+=======
+
+
+```
+
+>>>>>>> 9cf63096f503eb4c82813a2da92b49e6d398ccfb
 ```{r ROC_1, echo = FALSE, results="hide"}
 names(base_fits)<- "rpart - no sampling"
 
@@ -801,11 +808,18 @@ ROC_df<- data.frame(ROC)
 ROC_df$model<- names(ROC)
 rownames(ROC)<- NULL
 
+<<<<<<< HEAD
+ROC_df %>% 
+  arrange(-ROC) %>%
+  select(model, ROC) %>%
+  knitr::kable(format = "markdown", digits = 3)
+=======
 ROC_best_df<- ROC_df %>% 
   arrange(-ROC) %>%
   top_n(5, ROC) #Visualize top 5 models
 
 ROC_best_df %>% knitr::kable(format = "markdown", digits = 3)
+>>>>>>> 9cf63096f503eb4c82813a2da92b49e6d398ccfb
 
 ```
 
@@ -860,11 +874,19 @@ ROC_df<- data.frame(ROC)
 ROC_df$model<- names(ROC)
 rownames(ROC)<- NULL
 
+<<<<<<< HEAD
+ROC_df %>% 
+  arrange(-ROC) %>%
+  select(model, ROC) %>%
+  top_n(5, ROC) %>%
+  knitr::kable(format = "markdown", digits = 3)
+=======
 ROC_best_df<- ROC_df %>% 
   arrange(-ROC) %>%
   top_n(5, ROC)
 
 ROC_best_df %>% knitr::kable(format = "markdown", digits = 3)
+>>>>>>> 9cf63096f503eb4c82813a2da92b49e6d398ccfb
 
 
 ```
@@ -956,21 +978,59 @@ ROC_df<- data.frame(ROC)
 ROC_df$model<- names(ROC)
 rownames(ROC)<- NULL
 
-ROC_best_df<- ROC_df %>%
+ROC_df %>%
   arrange(-ROC) %>%
+<<<<<<< HEAD
+  select(model, ROC) %>%
+  top_n(6, ROC) %>% 
+  knitr::kable(format = "markdown", digits = 3)
+=======
   top_n(6, ROC)
+>>>>>>> 9cf63096f503eb4c82813a2da92b49e6d398ccfb
 
-ROC_best_df %>% knitr::kable(format = "markdown", digits = 3)
 
-
+<<<<<<< HEAD
 ```
 
+=======
+>>>>>>> 9cf63096f503eb4c82813a2da92b49e6d398ccfb
 
 ## 3. Testing different models
 A number of algorithms were tested on this classification problem. They include but are not limited to boosted trees, k-nearest neighbour, neural net algorithms. To reduce processing time, these algorithms were run on the first 10,000 rows from the training set, and only inlcuding what features were considered to be important, as specified previously. They were also run without smote-sampling for now. 
 
 ```{r models, echo = FALSE, evaluate = FALSE}
 
+<<<<<<< HEAD
+# set.seed(1)
+# 
+# #Test different models
+# model<- c("naive_bayes","knn", "kknn",
+#           "mlp", "monmlp","gbm", "multinom", 
+#           "avNNet", "glm", "C5.0")
+#  
+# sampling_method<- NULL
+# ctrl$sampling<- sampling_method
+# 
+# model_fits <- lapply(model, function(model){ 
+# 	print(model)
+# 	train(No_show ~ .,
+#               data = train_df_imp[1:10000,],
+#               method = model,
+# 	            metric = "ROC",
+# 	            trControl = ctrl)
+# }) 
+
+```
+=======
+## 3. Testing different models
+A number of algorithms were tested on this classification problem. They include but are not limited to boosted trees, k-nearest neighbour, neural net algorithms. To reduce processing time, these algorithms were run on the first 10,000 rows from the training set, and only inlcuding what features were considered to be important, as specified previously. They were also run without smote-sampling for now. 
+>>>>>>> 9cf63096f503eb4c82813a2da92b49e6d398ccfb
+
+
+<<<<<<< HEAD
+```{r ROC_4, echo = FALSE, results="hide"}
+
+=======
 # set.seed(1)
 # 
 # #Test different models
@@ -995,6 +1055,7 @@ A number of algorithms were tested on this classification problem. They include 
 
 ```{r ROC_4, echo = FALSE, results="hide"}
 
+>>>>>>> 9cf63096f503eb4c82813a2da92b49e6d398ccfb
 model<- c("naive_bayes","knn", "kknn",
           "mlp", "monmlp","gbm", "multinom", 
           "avNNet", "glm", "C5.0")
@@ -1032,9 +1093,15 @@ ROC_df %>%
 
 ## 4. Run and tune top performing models on full training set 
 The top model was gbm - Generalized Boosted Regression Model. This is a boosted tree algorithm, a class of algorithms which is well suited to classification. The second model is mlp - Multilayer Perceptron. This is a neural net type algorithm. 
+<<<<<<< HEAD
 
 While not scoring highly in this instance, the author has had previous success using C5.0 on large datasets. C5.0's success with larger dataset would not be reflected in the 10,000 rows evaluated previously. Therefore, C5.0 will be the third model to be evaluated with smote-sampling and the full dataset.
 
+=======
+
+While not scoring highly in this instance, the author has had previous success using C5.0 on large datasets. C5.0's success with larger dataset would not be reflected in the 10,000 rows evaluated previously. Therefore, C5.0 will be the third model to be evaluated with smote-sampling and the full dataset.
+
+>>>>>>> 9cf63096f503eb4c82813a2da92b49e6d398ccfb
 ```{r tune, echo = FALSE, evaluate = FALSE}
 
 # set.seed(1)
@@ -1056,8 +1123,13 @@ While not scoring highly in this instance, the author has had previous success u
 
 ```
 
+<<<<<<< HEAD
 
 
+=======
+
+
+>>>>>>> 9cf63096f503eb4c82813a2da92b49e6d398ccfb
 ```{r ROC_5, echo = FALSE, results="hide"}
 
 model<- c("gbm", "mlp", "C5.0")
@@ -1093,9 +1165,15 @@ ROC_df %>%
 ```
 
 In considering each model's tuning parameters, C5.0 appears to have a a steeper curve than the other two models. This indicates that the potential for model tuning is higher for C5.0 than for the two other models. 
+<<<<<<< HEAD
 
 As a reminder, ROC values reported in the results tables are averages from the models' cross-validated training set. This is why values appear to be higher in the graphs. 
 
+=======
+
+As a reminder, ROC values reported in the results tables are averages from the models' cross-validated training set. This is why values appear to be higher in the graphs. 
+
+>>>>>>> 9cf63096f503eb4c82813a2da92b49e6d398ccfb
 ```{r best_fits_results, echo = FALSE}
 limits<- c(0.72, 0.78) #Set limits to enable consistent comparisons
 
@@ -1292,9 +1370,15 @@ print(xtab)
 ```
 
 The final figure is a visual representation of the confusion matrix, with the probability threshold indicated by the stapled line. It shows the trade-off between Sensitivity and Precision, in that a lower probability threshold would yield more true positives, but also false positives. 
+<<<<<<< HEAD
 
 ```{r confmat_2, echo = FALSE}
 
+=======
+
+```{r confmat_2, echo = FALSE}
+
+>>>>>>> 9cf63096f503eb4c82813a2da92b49e6d398ccfb
 #Create data frame to visualize confusion matrix
 pr_metric_df<- data.frame(obs = test_df$No_show, prob = PRbest$No_show, pred = pred_best)
 
