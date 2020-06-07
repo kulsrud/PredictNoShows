@@ -42,7 +42,7 @@ This section presents the project's goals and a high-level overview of project d
 This project's goal was to predict attendance (i. e. No-show vs. attended) for doctor's appointments based on publicly available medical appointment data. This report was produced as a submission to the Data Science: Capstone course provided by HarvardX on the EdX platform.
 
 ## Dataset Description
-The medical appointment dataset  has 110,527 rows and 14 columns, and contains patient attendance data from April 29 to June 8, 2016, for a clinic in Brazil. The original dataset was sourced via Kaggle (ADD HYPERLINK). Columns contain the following information:  
+The medical appointment dataset  has 110,527 rows and 14 columns, and contains patient attendance data from April 29 to June 8, 2016, for a clinic in Brazil. The original dataset was sourced via Kaggle. https://www.kaggle.com/joniarroba/noshowappointments. Columns contain the following information:  
 
 Variable name |Variable Description
 --------------|------------------------------------------------------------------------
@@ -89,7 +89,7 @@ There are two date columns which were provided in year-month-date -- hour-minute
 * Hour of day (only available for ScheduledDay)
 * Duration from booking to appointment
 
-For AppointmentDay all hour-minute-second data was set to 00:00:00. This means that calculated duration from booking to appointment might err by the number of hours from 00:00:00 to clinic closing, at which time the last appointment would have taken place. 
+For AppointmentDay all hour-minute-second data was set to 00:00:00. This means that calculated duration from booking to appointment might err by the number of hours from 00:00:00 to the actual appointment time. 
 
 ```{r cleaning, echo = FALSE, include = FALSE}
 
@@ -144,7 +144,7 @@ This section explores variation between time-related variables and appointment N
 #### Appointment and scheduling Weekday
 At first glance it appears that appointments that were scheduled on Saturdays were much less likely to be missed. Otherwise, scheduling day does not appear to vary by meaningful proportions. 
 
-```{r weekday, echo = FALSE}
+```{r weekday, echo = FALSE, fig.align='center', fig.height=4}
 
 #Look at No-shows by weekday
 scheduled<- df %>%
@@ -177,7 +177,7 @@ On the other hand, appointents held on Saturdays appear to be missed more often 
 
 Further exploration reveal that that much fewer appointments were scheduled and held on Saturdays than on other days. This indicates that Saturday data may be less reliable than other weekdays, as it may be susceptible to for instance selection bias. 
 
-```{r saturdays, echo = FALSE}
+```{r saturdays, echo = FALSE, fig.align='center'}
 
 #Scheduled on Saturdays vs. No-show
 df %>% 
@@ -186,9 +186,9 @@ df %>%
   knitr::kable(digits = 2, col.names = c("Scheduled Weekday", "Appointments", "Percent No-show"))
 ```
 
- 
 
-```{r saturdays_3, echo = FALSE}
+
+```{r saturdays_3, echo = FALSE, fig.align='center'}
 
 #Appointment on Saturdays vs. Walk-ins
 df %>% 
@@ -205,7 +205,7 @@ Saturday appointment effects are small enough that it should not meaningfully sk
 #### Hour of day scheduled
 The hour of day that appointments were scheduled also seems to have an impact, varying from around 15% No-shows early in the morning, to over 30% late in the evening. It is unclear why this should be the case, other than that patients may be more tired and forgetful and therefore forget appointments scheduled later in the day. 
 
-```{r hours, echo = FALSE}
+```{r hours, echo = FALSE, fig.align='center', fig.height=4, fig.width=6}
 
 #Look at No-shows by hour of the day
 df %>%
@@ -226,7 +226,7 @@ Interestingly there are appointments that are recorded as scheduled after the ap
 
 Either way, the recorded difference between scheduling and appointment timing deviates from the true difference by a number of hours. This is made clear by the presence of negative values. This paper continues the timing difference exploration with this caveat in mind. 
 
-```{r wait, echo = FALSE}
+```{r wait, echo = FALSE, fig.align='center'}
 #Bin difference between scheduled time and appointment time
 df %>%
   group_by(BookDiffBin = ntile(BookingDifference, 12)) %>%
@@ -247,21 +247,8 @@ To do a high-level exploration of No-show outcomes it is reasonable to bin the h
 Binning was based on the intuition that three common appointment types vary by Walk-ins (less than 1 hours difference), Scheduled within a week (1 to 168 hours difference), and Scheduled within more than one week (more than 168 hours difference)
 
 
-```{r bins, echo = FALSE}
+```{r bins, echo = FALSE, fig.align='center', fig.width=5, fig.height=3.5}
 
-# ntile_bins<- df %>%
-#   group_by(BookDiffBin = ntile(BookingDifference, 3)) %>%
-#   summarize(No_show = mean(No_show), BookDiff = mean(BookingDifference)) %>%
-#   ggplot(aes(BookDiffBin, No_show))+
-#   geom_bar(stat = "identity", size = 1)+
-#   #geom_step(aes(ntile(BookDiffBin, 3)))
-#   geom_label(aes(x = BookDiffBin, y = No_show + 0.05,    label = round(BookDiff, 0)))+
-#   scale_x_discrete(breaks = NULL)+
-#   scale_y_continuous(limits = c(0, 0.4))+
-#   #theme(axis.text.x = element_text(angle = 45, hjust = 1))+
-#   labs(title = "Binned by frequency",
-#        x = NULL, 
-#        y = "No-show proportion")
 
 #Intuition about walk-ins
 df %>%
@@ -278,31 +265,10 @@ df %>%
        x = "Appointment Type", 
        y = "Likelihood of No-show")
 
-# #Binning - less applicable than insight about walk-ins
-# bins<- woe.binning(df = df, target.var = 'No_show', pred.var = 'BookingDifference')
-# auto_bin<- (woe.binning.deploy(df, bins) %>%
-#               pull(as.numeric(BookingDifference.binned)))
-# 
-# auto<- df %>%
-#   mutate(auto_bin = auto_bin) %>% 
-#   group_by(auto_bin) %>%
-#   summarize(No_show = mean(No_show), BookDiff = mean(BookingDifference)) %>%
-#   ggplot(aes(auto_bin, No_show))+
-#   geom_bar(stat = "identity", size = 1)+
-#   geom_label(aes(x = auto_bin, y = No_show + 0.05, label = round(BookDiff, 0)))+
-#   scale_x_discrete(breaks = NULL)+
-#   scale_y_continuous(limits = c(0, 0.4))+
-#   #theme(axis.text.x = element_text(angle = 45, hjust = 1))+
-#   labs(title = "Binned by woeBinning",
-#        x = NULL, 
-#        y = NULL)
-# 
-# grid.arrange(ntile_bins, intuitive, auto, ncol = 3,
-#              widths = c(2.5, 2, 2))
 
 ```
 
-Binning shows that the intuition about appointment types is reasonable. This intuition can be used further in exploratory analysis. 
+Binning shows that the intuition about appointment types is reasonable for the purposes of exploratory analysis. 
 
 ### Demographics 
 This section explores variations in the No-show outcome by different demographic factors: 
@@ -315,7 +281,7 @@ This section explores variations in the No-show outcome by different demographic
 #### Patient effects
 The scatterplot confirms the intution that there are differences in how many appointments patients had over the period of the dataset, and how likely they were to miss their apointments. For instance, there is a sharp cutoff in No-show likelihood around an average of one appointment per day. In other words, patients who see their doctor more frequently are more likely to keep their appointments. The observation that some patients have more than one appointment per day is reasonable. This is because one longer appointment would likely be scheduled as a sequence of individual appointments in medical scheduling software, giving the appearance of multiple appointments. 
 
-```{r demographics, echo = FALSE}
+```{r demographics, echo = FALSE, fig.align='center', fig.height=3, fig.width=5}
 
 #Looking at patient effects
 df %>%
@@ -334,7 +300,7 @@ df %>%
 #### Age
 There is a clear visual relationship between age and likelihood of no-shows. Patients in their 20s seem to miss appointments more often than other age groups, followed by gradually lower chance of No-show as patients age. Older patients diverge from this pattern, where some patients are reliable, and others not. 
 
-```{r age, echo = FALSE, warning=FALSE}
+```{r age, echo = FALSE, warning=FALSE, fig.align='center', message=FALSE, fig.width=5, fig.height=4.5}
 
 #Looking at age effects
 df %>% 
@@ -353,7 +319,7 @@ df %>%
 #### Gender
 There does not appear to be any obvious connections between gender and likelihood of No-shows. 
 
-```{r gender, echo = FALSE}
+```{r gender, echo = FALSE, fig.align='center', fig.width=5, fig.height=3}
 
 #Looking at Gender effects
 df %>%
@@ -371,28 +337,30 @@ df %>%
 ```
 
 #### Neighbourhoods
-Some neighbourhoods have high likelihood of misesd appointments, and others lower. However, because there are a limited number observations for some neighbourhoods, the difference in likelihood might be explained by other factors, or simply be person-dependent. This was confirmed by considering the number of people per neighbourhood, sorted by the top and bottom likelihood No-show neighbourhoods. Both the top and bottom neighbourhoods have few observations. 
+Some neighbourhoods have high likelihood of misesd appointments, and others lower. However, because there are a limited number observations for some neighbourhoods, the difference in likelihood might be explained by other factors, or simply be person-dependent. This was confirmed by considering the number of people per neighbourhood, sorted by the top and bottom likelihood No-show neighbourhoods. Both high and low likelihood no-show observations tend to have few observations, with minor exceptions. For reference, mean observations per neighourhood is `r df %>% group_by(Neighbourhood) %>% summarize(n = n()) %>% ungroup() %>% summarize(mean = mean(n)) %>% .$mean`  
 
-```{r neighbourhoods, echo = FALSE}
+```{r neighbourhoods, echo = FALSE, fig.align='center', fig.width=5}
 
 #Top 5 no-show areas - low n
 df %>% 
   group_by(Neighbourhood) %>%
-  summarize(No_show = mean(No_show), n = n()) %>%
-  arrange(-No_show) %>%
-  top_n(5, No_show) %>%
+  summarize(`No_show (High)` = mean(No_show), n = n()) %>%
+  arrange(-`No_show (High)`) %>%
+  top_n(5, `No_show (High)`) %>%
   knitr::kable(format = "markdown", digits = 3)
 
 ```
 
-```{r nhood_2}
+
+
+```{r nhood_2, echo = FALSE, fig.align='center', fig.width=5}
 
 #Bottom 5 no-show areas - also low n
 df %>% 
   group_by(Neighbourhood) %>%
-  summarize(No_show = mean(No_show), n = n()) %>%
-  arrange(No_show) %>%
-  top_n(5, -No_show)%>%
+  summarize(`No_show (Low)` = mean(No_show), n = n()) %>%
+  arrange(`No_show (Low)`) %>%
+  top_n(5, -`No_show (Low)`)%>%
   knitr::kable(format = "markdown", digits = 3)
 
 
@@ -400,7 +368,7 @@ df %>%
 
 The scatterplot confirms that there is additional variation between neighbourhoods, that is not explained by the number of appointments from that neighbourhood. A filter for more than 50 neighbourhoods was applied in the graph to account for an outlier neighbourhood with 100% No-shows.  
 
-```{r neighbourhood_2, echo = FALSE, warning=FALSE}
+```{r neighbourhood_2, echo = FALSE, message=FALSE, fig.align='center', fig.width=5, fig.height=4}
 
 df %>% 
   group_by(Neighbourhood) %>%
@@ -418,7 +386,7 @@ df %>%
 
 Neighbourhoods were subsequently grouped into quartiles, as shown in the graph. Neighbourhood names were taken out fo ease of presentation. 
 
-```{r neighbourhood_3, echo = FALSE}
+```{r neighbourhood_3, echo = FALSE, fig.align='center', fig.width=9, fig.height=4.5}
 
 #Group by neighbourhood group, define variable
 Nhood_quartiles<- df %>% 
@@ -475,18 +443,8 @@ Intuition suggests that someone who have missed a past appointment may be more l
 
 There is a limitation in this as all the dataset misses a total patient history. This means that all individuals will start at no past no-shows, and accumulate them over the timeframe of the dataset. 
 
-```{r pastnoshows, echo = FALSE}
-#No show if patient missed a past appointment
-# df %>%
-#   arrange(AppointmentDay) %>%
-#   group_by(PatientId) %>%
-#   mutate(PastNo_show = ifelse(cumsum(No_show)-1 <0, 0, cumsum(No_show)-1)) %>%
-#   ungroup() %>%
-#   arrange(PatientId, -PastNo_show) %>%
-#   group_by(PastNo_show) %>%
-#   summarize(n = n(), No_show = mean(No_show)) %>%
-#   knitr::kable()
-  
+```{r pastnoshows, echo = FALSE, fig.align='center', message=FALSE}
+
 #Show mean likelihood of missing appointment if missed past appointents
 df %>%
   arrange(AppointmentDay) %>%
@@ -507,7 +465,7 @@ df %>%
 
 
 
-```{past_no_show_validate, evaluate = FALSE, echo = FALSE, include = FALSE}
+```{r past_no_show_validate, evaluate = FALSE, echo = FALSE, include = FALSE}
 
 #Code to validate that no-shows were estimated correctly. 
 
@@ -545,7 +503,7 @@ df %>%
 ### Medical Information
 Medical information includes clinical diagnoses that were captured in the dataset. PreExisting is a variable adding up all conditions, to see if there are additive effects on likelihood of no-shows from having more than one medical condition. Individuals with hypertension were less likely to miss an appointment, as were those with Diabetes, however the latter has a minor effect only. The PreExisting variable does not appear to explain variation beyond what is already captured by the diabetes variable. Furthermore, as different medical conditions appear to influence the likelihood of no-shows in different directions, an additive variable is not likely to add value. Finally, alcoholism and Handicap shows minor to no variations with likelihood of no-shows. 
 
-```{r medical, echo = FALSE}
+```{r medical, echo = FALSE, fig.align='center'}
 
 #Make a subset of data with preexisting conditions tidy as one variable. Observe each as an average against dependent variable, as well as the sum. Start with grouping by dependent variable and then taking mean of each and total sum. 
 df %>% 
@@ -569,7 +527,7 @@ df %>%
 ### Other variables
 Having received a Scholarship (related to the Bolsa Familia program) shows minor variation only. Having receied an SMS appears to make individuals less likely to make their appointment, which is counterintuitive. This surprising result warrants additional exploration to understand whether the data is reliable, or is inadvertently capturing relationships between other variables and the likelihood of no-shows. 
 
-```{r other, echo = FALSE}
+```{r other, echo = FALSE, fig.align='center', fig.height=3.5, fig.width=4}
 
 df %>% 
   group_by(No_show) %>%
@@ -589,7 +547,7 @@ df %>%
 
 
 
-```{r sms_1, evaluate = FALSE, echo=FALSE, include = FALSE}
+```{r sms_1, evaluate = FALSE, echo=FALSE, include = FALSE, fig.align='center'}
 
 
 df %>% 
@@ -634,7 +592,7 @@ df %>%
 It was identified that by analyzing the relationship between SMS received and likelihood of no-shows by appointment type that the correlation between SMS received and No-shows was explained by appointment type, defined by the duration from booking to the appointment. The graph shows that only medium to long-term bookings receive the SMS, and those appointment types (especially longer-term) were already shown to have a higher likelihood of no-showing. In fact, individiuals with long-term bookings are more likely to show up to their appointment if the recieved an SMS reminder.  
 
 
-```{r sms_2, echo = FALse}
+```{r sms_2, echo = FALSE}
 
 #Look as SMS reminders for each appointment type - They aren't sent for walk-ins, which already have much lower no-show rates. For apointments within 1 week there is no difference, and for long-term appointments they make patients about 6% more likely to show up to their appointments. 
 df %>%
@@ -645,7 +603,7 @@ df %>%
     ggplot(aes(reorder(AppointmentType, No_show), No_show, fill = SMS_received))+
     geom_bar(stat = "identity", position = "dodge")+
     scale_fill_manual("SMS Received", values = c("steelblue", "grey50"))+
-    labs(title = "No-show proportion by appointment type and SMS receipt",
+    labs(title = "No-show by appointment type and SMS",
        x = "Appointment Type", 
        y = "Proportion No-shows")
 
@@ -712,7 +670,7 @@ To facilitate algorithm analysis, the following feature engineering was complete
   + Diabetes
   + SMS_received
 
-A logical test was conducted to confirm that all features had been accounted for. 
+A logical test was confirmed that all features had been accounted for. 
 
 ```{r preprocessing, echo = FALSE, include = FALSE}
 
@@ -744,25 +702,34 @@ lapply(ml_df[stand_list], (hist))
 #Confirm that variable names are acceptable
 make.names(c(lapply(ml_df[cat_list], levels)), unique = TRUE)
 
-knitr::knit_exit()
 
 ```
-  
 
 
 ## Modeling approach
-The model will follow the following formula to predict movie scores.  
+The goal of the project is to predict whether an appointment will be a No-show or not, which means the problem is well suited to classification models. Roughly 20% of apointments are No-shows, which means that the dataset is imbalanced. All models predict the probability of No-show, which enable optimizing the probability threshold towards higher certainty but fewer correct predictions, against lower certainty but more correct predictions. 
 
-$Y_{u,i} = μ + b_i +b_u + ∑k = 1^{K}x_{u,i}β_{k} + ε_{u,i}$, with  $x^{k}_{u,i}=1$ if $g_{u,i}$ is genre $k$  
+The project followed the following approach to evaluating models:
 
-It will calculate movie effects $b_i$, user effects $b_u$, and genre effects $k$ that summarize genre scores for all genres that apply to a particular movie rating by a user.  
+1. Use a basic classification algorithm with low processing time for preliminary results, and to explore strategies for imbalance mitigation. 
+2. Visualize results to better understand which features are most important for predicting No-shows. 
+3. Using only the most important features and a reduced dataset to reduce processing time, test a range of more sophisticated models and rank their results. 
+4. Run top performing models using the full dataset, and tune parameters for to optimize predictions. 
+5. Optimize the probability threshold for the top models. 
+6. Make final prediction on the test set using the one best performing model from step 5. 
+
+The data was split into 20 / 80 proportions, where 20% is set aside as the final test set, and 80% is used to train the model(s). Cross-validated versions of the training set is used throughout to evaluate models, until the final prediction on the test set in step 6. 20% was selected as convention, leaving enough data to train in the train set, while keeping enough data in the test set to appropriately evaluate the final trained model. 
 
 ### Evaluating models
-Accuracy
-Precision and Recall (Sensitivity)
+Accuracy is a common metric to evaluate classification models, measuring the proportion of correct predictions. However, because it is based on sensitivity (true positives) and specificity (true negatives) it is biased for unbalanced datasets. In an extreme situation,the metric creates an incentive for the model to predict all appointments as negatives (i. e. not No-show), with accuracy remaining at 80%.
 
+For this reason the project will use Precision and Recall (Sensitivity) to evaluate models' performance. Precision is used instead of Specificity as it optimizes for the proportion of true positives to all positives (i. e. how many predicted No-shows were actually No-shows). Sensitivity measures what proportion of all No-shows were predicted as No-shows. 
 
-```{r partition, echo = FALSE, evaluate = FALSE}
+Precision and Sensitivity generally move in the opposite direction. For instance, if Sensitivity is higher and more No-shows were captured overall, Precision is likely to be lower because this usually means there are more false positives. Inversely, when Sensitivity is lower and fewer No-shows were captured overall, Precision is likely to be higher because the model predicts No-shows for more certain observations. The trade-off between Precision and Sensitivity can be optimized using probability threshold optimization. 
+
+For the process of training and comparing different models, ROC will be used as it enables an easier comparison (one number vs. two in the case of Sensitivity and Precision). ROC will be calculated using cross-validation of training data.  
+
+```{r partition, echo = FALSE}
 
 set.seed(1)
 #Ceate index to split in test and training sets
@@ -773,33 +740,47 @@ test_df <- ml_df[test_index,] #defining test set
 
 ```
 
-# Results
-A movie recommendation system based on the presented approach produces the following RMSE:  
+  
 
-```{r train_controls, echo = FALSE, evaluate = FALSE}
+```{r train_controls, echo = FALSE}
 
-#Set training control method for both Conservative and Non-Conservative models
+#Set training control method
 ctrl<- trainControl(method = "cv", #Set method to 10-fold cv
                     classProbs = TRUE, #Estimate class probabilities when training
                     summaryFunction = twoClassSummary, #Assign type of summary (allows for producing ROC curves)
                     savePredictions = "final") #Allows for using probability threshold tuning
 
+load("ml-2020-06-05.Rdata") #Load past results to make RMD knitting go faster 
+
 ```
 
+# Results
+This section presents the results from the 6-step approach described previously. 
+
+## 1. Rpart Exploration
+The first model uses Rpart as it is a fast-running classification model that can set a baseline to compare other models to. 
 
 ```{r model, echo = FALSE, evaluate = FALSE}
 
-model<- "rpart"
-ctrl$sampling<- NULL
-base_fits <- lapply(model, function(model){ 
-	print(model)
-	train(No_show ~ .,
-              data = train_df,
-              method = model,
-	            metric = "ROC",
-	            trControl = ctrl)
-}) 
+# set.seed(1) #Set seed to enable results replication
+# 
+# model<- "rpart" #Set model as rpart
+# ctrl$sampling<- NULL #Don't use sampling strategies yet
+# 
+# #Train model
+# base_fits <- lapply(model, function(model){ 
+# 	print(model)
+# 	train(No_show ~ .,
+#               data = train_df,
+#               method = model,
+# 	            metric = "ROC",
+# 	            trControl = ctrl)
+# }) 
 
+
+```
+
+```{r ROC_1, echo = FALSE, results="hide"}
 names(base_fits)<- "rpart - no sampling"
 
 ROC <- sapply(base_fits, function(model){ 
@@ -808,31 +789,56 @@ ROC <- sapply(base_fits, function(model){
 	matrix(ROC)
 
 })
-ROC
 
+```
+
+The initial model produced an ROC of 0.578. An ROC of .50 is the equivalent of random guessing, meaning that there is a lot of potential improvement to be made. The maximum ROC value is 1, meaning the model would predict all values perfectly. All reported ROC values represent the average model performance on the cross-validated training set. 
+
+```{r results_1, echo = FALSE}
+
+#Organize and visualize results from initial model
+ROC_df<- data.frame(ROC)
+ROC_df$model<- names(ROC)
+rownames(ROC)<- NULL
+
+ROC_df %>% 
+  arrange(-ROC) %>%
+  select(model, ROC) %>%
+  knitr::kable(format = "markdown", digits = 3)
 
 ```
 
 
 ```{r sampling, echo = FALSE, evaluate = FALSE}
 
-#Test different sampling strategies
+# set.seed(1)
+# 
+# #Test different sampling strategies
+# model<- c("rpart")
+# 
+# sampling_method<- c("down", "up", "rose", "smote")
+# ctrl$sampling<- sampling_method
+# 
+# sampling_fits <- lapply(sampling_method, function(sampling_method){ 	print(sampling_method)
+# 	train(No_show ~ .,
+#               data = train_df,
+#               method = model,
+# 	            metric = "ROC",
+# 	            trControl = ctrl)
+# }) 
+
+```
+
+
+
+```{r ROC_2, echo = FALSE, results="hide"}
+
+#Create values for table
 model<- c("rpart")
-
 sampling_method<- c("down", "up", "rose", "smote")
-ctrl$sampling<- sampling_method
-
-sampling_fits <- lapply(sampling_method, function(sampling_method){ 	print(sampling_method)
-	train(No_show ~ .,
-              data = train_df,
-              method = model,
-	            metric = "ROC",
-	            trControl = ctrl)
-}) 
-    
 names(sampling_fits) <- paste(model,"-", sampling_method)
 
-#Create matrix of accuracy
+#Create matrix of ROC
 sampling_ROC <- sapply(sampling_fits, function(model){ 
 	print(model)
 	ROC<- mean(model$results$ROC)
@@ -840,42 +846,48 @@ sampling_ROC <- sapply(sampling_fits, function(model){
 
 })
 
+```
+
+Using imbalance strategies help improve results, taking the best model up to roughly 0.7 ROC. Results from different sampling strategies were similar, however smote was selected for being marginally better, as well as having the quality of creating synthetic data similar to the original data, as opposed to reusing or dropping data. 
+
+```{r results_2, echo = FALSE}
+
+#Add results to running top5 
 ROC<- append(ROC, sampling_ROC)
 
 ROC_df<- data.frame(ROC)
 ROC_df$model<- names(ROC)
 rownames(ROC)<- NULL
 
-ROC_best_df<- ROC_df %>% #Don't need ROC_best_df
+ROC_df %>% 
   arrange(-ROC) %>%
-  top_n(10, ROC)
+  select(model, ROC) %>%
+  top_n(5, ROC) %>%
+  knitr::kable(format = "markdown", digits = 3)
 
-ROC_best_df %>% knitr::kable(format = "markdown", digits = 3)
-
-best_model<- ROC_best_df$model[which(ROC_best_df$ROC==max(ROC))]
-best_model
-best_model<- sampling_fits$`rpart - smote`
 
 ```
 
+## 2. Visualizing Results, and Variable Importance
+Rpart is a tree model, which makes visualizing results easy. The preliminary results indicate that past No-shows are important for predicting future no-shows. Furthermore, age is also important, where high ages are likely to show up, and lower ages less likely to show up. (having seen the data this is an oversimplification, but it holds true directionally). Appointments that were far from their booking date are more likely to be missed. Finally, patients with more frequent appoitments are less likely to miss their appointments. 
 
-
-```{r tree, evaluate = FALSE}
+```{r tree, echo = FALSE, fig.width=9, fig.height=6}
 
 # Visualize the decision tree with rpart.plot
 rpart.plot(sampling_fits$`rpart - smote`$finalModel, box.palette="RdBu", shadow.col="gray", nn=TRUE)
 
 ```
 
+Using results from the preliminary analysis we can estimate variable importance for the different features. This enables us the next step of the analysis, which is to evaluate different models using a simpler version of the dataset to reduce processing time. 
 
-```{r importance, echo = FALSE, evaluate = FALSE}
+The calculated variable importance adds additional nuance to which features are considered important by the model. Importance is estimated on a scale from 0 to 100. In addition to the aforementioned, time of booking, SMS reminder, neighbourhood, and the hypertension variable are also considered marginally important by the model. 
 
-#load.image(initial_ml)
+However, looking at the detailed importance values, having booked appointments on Mondays and living in certain neigbourhoods are only ewakly important. an arbitrary cutoff was set at importance of 2, where those below 2 was dropped. Note that unimportant features are only taken out for the model testing phase, and will be put back in for final model training. 
+
+```{r importance, echo = FALSE}
 
 #Calculate and visualize variable importance
-imp <- varImp(best_model)
-
-ggplot(imp)+ggtitle("Model - Variables of importance")
+imp <- varImp(sampling_fits$`rpart - smote`)
 
 important<- imp$importance %>%
   mutate(Feature = rownames(imp$importance)) %>%
@@ -883,32 +895,44 @@ important<- imp$importance %>%
 
 important %>%
   select(Feature, Overall) %>%
+  rename(Importance = Overall) %>%
   knitr::kable(format = "markdown", digits = 2)
 
-important_vars<- important %>% 
-  filter(Overall > 2) %>%
-  select(Feature) %>%
-  .$Feature
 
-important_vars <- str_remove(string = important_vars, pattern = "\\.[:alpha:]{1}")
-important_vars <- append(important_vars, "No_show") #Add dependent variable
 
 ```
 
 ```{r important_fit, echo = FALSE, evaluate = FALSE}
 
-model<- "rpart"
-ctrl$sampling<- NULL
-train_df_imp<- train_df[,important_vars]
+important_vars<- important %>% #Take out feature names to filter dataset 
+  filter(Overall > 2) %>%
+  select(Feature) %>%
+  .$Feature
 
-imp_fits <- lapply(model, function(model){ 
-	print(model)
-	train(No_show ~ .,
-              data = train_df_imp,
-              method = model,
-	            metric = "ROC",
-	            trControl = ctrl)
-}) 
+important_vars <- str_remove(string = important_vars, pattern = "\\.[:alpha:]{1}") #Clean up feature names
+
+important_vars <- append(important_vars, "No_show") #Add dependent variable
+
+#Test rpart results as baseline
+# set.seed(1)
+# 
+# model<- "rpart"
+# ctrl$sampling<- NULL
+# train_df_imp<- train_df[,important_vars]
+# 
+# imp_fits <- lapply(model, function(model){ 
+# 	print(model)
+# 	train(No_show ~ .,
+#               data = train_df_imp,
+#               method = model,
+# 	            metric = "ROC",
+# 	            trControl = ctrl)
+# }) 
+
+```
+
+
+```{r ROC_3, echo=FALSE, results="hide"}
 
 names(imp_fits)<- "rpart - no sampling - important vars"
 
@@ -919,51 +943,62 @@ imp_ROC <- sapply(imp_fits, function(model){
 
 })
 
+```
+
+A sense check confirms that little to no predictive power is lost by taking out the unimportant features. 
+
+```{r results_3, echo = FALSE}
+
 ROC<- append(ROC, imp_ROC)
 
 ROC_df<- data.frame(ROC)
 ROC_df$model<- names(ROC)
 rownames(ROC)<- NULL
 
-ROC_best_df<- ROC_df %>%
+ROC_df %>%
   arrange(-ROC) %>%
-  top_n(10, ROC)
+  select(model, ROC) %>%
+  top_n(6, ROC) %>% 
+  knitr::kable(format = "markdown", digits = 3)
 
-ROC_best_df %>% knitr::kable(format = "markdown", digits = 3)
-
-best_model<- ROC_best_df$model[which(ROC_best_df$ROC==max(ROC))]
-best_model
-
-#best_model<- sampling_fits$`rpart - smote`
 
 ```
 
 
-##Testing different models
-To 
-
+## 3. Testing different models
+A number of algorithms were tested on this classification problem. They include but are not limited to boosted trees, k-nearest neighbour, neural net algorithms. To reduce processing time, these algorithms were run on the first 10,000 rows from the training set, and only inlcuding what features were considered to be important, as specified previously. They were also run without smote-sampling for now. 
 
 ```{r models, echo = FALSE, evaluate = FALSE}
 
-#Test different sampling strategies
-model<- ("naive_bayes",  "svmLinear", 
-                "knn", "kknn",
-                "mlp", "monmlp",
-                "gbm", "svmRadial", "svmRadialCost", "svmRadialSigma", "svmPoly", "multinom", "avNNet", "glm", "C5.0")
- 
-sampling_method<- NULL
-ctrl$sampling<- sampling_method
+# set.seed(1)
+# 
+# #Test different models
+# model<- c("naive_bayes","knn", "kknn",
+#           "mlp", "monmlp","gbm", "multinom", 
+#           "avNNet", "glm", "C5.0")
+#  
+# sampling_method<- NULL
+# ctrl$sampling<- sampling_method
+# 
+# model_fits <- lapply(model, function(model){ 
+# 	print(model)
+# 	train(No_show ~ .,
+#               data = train_df_imp[1:10000,],
+#               method = model,
+# 	            metric = "ROC",
+# 	            trControl = ctrl)
+# }) 
 
-model_fits <- lapply(model, function(model){ 
-	print(model)
-	train(No_show ~ .,
-              data = train_df_imp[1:10000,],
-              method = model,
-	            metric = "ROC",
-	            trControl = ctrl)
-}) 
-    
-names(C50_fits) <- paste(model, "- no sampling - important vars")
+```
+
+
+```{r ROC_4, echo = FALSE, results="hide"}
+
+model<- c("naive_bayes","knn", "kknn",
+          "mlp", "monmlp","gbm", "multinom", 
+          "avNNet", "glm", "C5.0")
+
+names(model_fits) <- paste(model, "- no sampling - important vars")
 
 #Create matrix of accuracy
 model_ROC <- sapply(model_fits, function(model){ 
@@ -973,8 +1008,14 @@ model_ROC <- sapply(model_fits, function(model){
 
 })
 
-C50_ROC
-ROC<- append(ROC, C50_ROC)
+
+```
+
+Using different algorithms improved results beyond what was observed previously, even without using a sampling strategy. Of the 10 tested algorithms, 7 performed better than the smote-sampling rpart model that was trained on the full training set. 
+
+
+```{r results_4, echo = FALSE}
+ROC<- append(ROC, model_ROC)
 
 ROC_df<- data.frame(ROC)
 ROC_df$model<- names(ROC)
@@ -983,57 +1024,42 @@ rownames(ROC)<- NULL
 ROC_df %>% 
   arrange(-ROC) %>%
   select(model, ROC) %>%
-  #top_n(10, ROC) %>% 
+  top_n(8, ROC) %>% 
   knitr::kable(format = "markdown", digits = 3)
 
-best_model<- ROC_df$model[which(ROC_df$ROC==max(ROC))]
-best_model
+```
 
-best_model<- model_fits$`gbm no sampling - important vars`
+## 4. Run and tune top performing models on full training set 
+The top model was gbm - Generalized Boosted Regression Model. This is a boosted tree algorithm, a class of algorithms which is well suited to classification. The second model is mlp - Multilayer Perceptron. This is a neural net type algorithm. 
+
+While not scoring highly in this instance, the author has had previous success using C5.0 on large datasets. C5.0's success with larger dataset would not be reflected in the 10,000 rows evaluated previously. Therefore, C5.0 will be the third model to be evaluated with smote-sampling and the full dataset.
+
+```{r tune, echo = FALSE, evaluate = FALSE}
+
+# set.seed(1)
+# 
+# model<- c("gbm", "mlp", "C5.0")
+# model
+#  
+# sampling_method<- "smote"
+# ctrl$sampling<- sampling_method
+# 
+# tune_fits <- lapply(model, function(model){ 
+# 	print(model)
+# 	train(No_show ~ .,
+#               data = train_df,
+#               method = model,
+# 	            metric = "ROC",
+# 	            trControl = ctrl)
+# }) 
 
 ```
 
-###Loading past work
-
-```{r reload, evaluate = FALSE}
-list.files(getwd(), pattern = ".Rdata")
-
-load("initial_ml.Rdata")
-
-save_version<- paste("ml-", Sys.Date(), ".Rdata", sep = "")
-save_version
-save.image(save_version)
-
-load(save_version)
 
 
-```
+```{r ROC_5, echo = FALSE, results="hide"}
 
-```{r tune, evaluate = FALSE}
-
-model<- ROC_df %>% 
-  arrange(-ROC) %>%
-  select(model, ROC) %>%
-  top_n(2, ROC) %>% 
-  select(model) %>%
-  mutate(model = word(model, sep = " ")) %>%
-  .$model
-
-model<- append(model, "C5.0")
-model
- 
-sampling_method<- "smote"
-ctrl$sampling<- sampling_method
-
-tune_fits <- lapply(model, function(model){ 
-	print(model)
-	train(No_show ~ .,
-              data = train_df,
-              method = model,
-	            metric = "ROC",
-	            trControl = ctrl)
-}) 
-
+model<- c("gbm", "mlp", "C5.0")
 names(tune_fits) <- paste(model, "- smote - full dataset")
 
 #Create matrix of accuracy
@@ -1044,7 +1070,11 @@ tune_ROC <- sapply(tune_fits, function(model){
 
 })
 
-tune_ROC
+```
+
+Results show that adding the full dataset improved results marginally for all three algorithms, with gbm performing slightly better than C5.0, followed by mlp. 
+
+```{r results_5, echo = FALSE}
 
 
 ROC<- append(ROC, tune_ROC)
@@ -1056,59 +1086,76 @@ rownames(ROC)<- NULL
 ROC_df %>% 
   arrange(-ROC) %>%
   select(model, ROC) %>%
-  #top_n(10, ROC) %>% 
+  top_n(5, ROC) %>% 
   knitr::kable(format = "markdown", digits = 3)
 	
 ```
 
-C5.0 has a steeper curve.
+In considering each model's tuning parameters, C5.0 appears to have a a steeper curve than the other two models. This indicates that the potential for model tuning is higher for C5.0 than for the two other models. 
 
-Winnowing seems not to make a difference, tree and rule based model both perform well depending on winnowing or not. 
+As a reminder, ROC values reported in the results tables are averages from the models' cross-validated training set. This is why values appear to be higher in the graphs. 
 
-```{r best_fits_results, evaluate = FALSE}
-limits<- c(0.72, 0.78)
+```{r best_fits_results, echo = FALSE}
+limits<- c(0.72, 0.78) #Set limits to enable consistent comparisons
+
 ggplot(tune_fits$`C5.0 - smote - full dataset`)+
-  scale_y_continuous(limits = limits)
+  scale_y_continuous(limits = limits)+ 
+  ggtitle("C5.0, Smote, Full Dataset")
+
 ggplot(tune_fits$`mlp - smote - full dataset`)+
-  scale_y_continuous(limits = limits)
+  scale_y_continuous(limits = limits)+
+  ggtitle("Mlp, Smote, Full Dataset")
+
 ggplot(tune_fits$`gbm - smote - full dataset`)+
-  scale_y_continuous(limits = limits)
+  scale_y_continuous(limits = limits)+
+  ggtitle("Gbm, Smote, Full Dataset")
 
 #grid.arrange(c50_params, mlp_params, gbm_params) # Show C5.0 at top with mlp and gb at the bottom
 
 ```
 
+For C5.0 winnowing apperas not to make a difference, with tree and rule based models both perform well. However, higher number of boosts seem to improve performance. The final model was trained setting "trials" to 20, 25, and 30. 30 trials was the highest R was able to run without crashing. 
+
+```{r C50_tune, echo = FALSE, evaluate = FALSE}
+
+# set.seed(1)
+# 
+# getModelInfo("C5.0")
+# tune_fits$`C5.0 - smote - full dataset`$bestTune
+# 
+# #model
+# model<- "C5.0"
+# model
+# 
+# #sampling
+# sampling_method<- "smote"
+# ctrl$sampling<- sampling_method
+# 
+# #tuning
+# grid <- expand.grid(.winnow = c(FALSE), .trials=c(20, 25, 30), .model=c("rules"))
+# 
+# C50_tune <- lapply(model, function(model){ 
+# 	print(model)
+# 	train(No_show ~ .,
+#               data = train_df,
+#               method = model,
+# 	            metric = "ROC",
+# 	            trControl = ctrl,
+# 	            tuneGrid = grid)
+# }) 
 
 
-```{r C50_tune, evaluate = FALSE}
+```
 
-getModelInfo("C5.0")
-tune_fits$`C5.0 - smote - full dataset`$bestTune
 
-#model
+
+```{r ROC_6, echo = FALSE, results="hide"}
+
 model<- "C5.0"
-model
-
-#sampling
-sampling_method<- "smote"
-ctrl$sampling<- sampling_method
-
-#tuning
-grid <- expand.grid(.winnow = c(FALSE), .trials=c(20, 25, 30), .model=c("rules"))
-
-C50_tune <- lapply(model, function(model){ 
-	print(model)
-	train(No_show ~ .,
-              data = train_df,
-              method = model,
-	            metric = "ROC",
-	            trControl = ctrl,
-	            tuneGrid = grid)
-}) 
-
 names(C50_tune) <- paste(model, "- smote - full dataset - tuning")
 
-ggplot(C50_tune$`C5.0 - smote - full dataset - tuning`)
+ggplot(C50_tune$`C5.0 - smote - full dataset - tuning`)+
+  ggtitle("C5.0, Smote, Full Dataset, Tuned")
 
 
 #Create matrix of accuracy
@@ -1119,7 +1166,11 @@ tune_C50 <- sapply(C50_tune, function(model){
 
 })
 
-tune_C50
+```
+
+While the graph indicates additional potential gain, 30 iterations was the highest number that R could run without crashing. With the additional tuning, C5.0 is now the leading model. 
+
+```{r results_6, echo = FALSE}
 
 
 ROC<- append(ROC, tune_C50)
@@ -1131,16 +1182,16 @@ rownames(ROC)<- NULL
 ROC_df %>% 
   arrange(-ROC) %>%
   select(model, ROC) %>%
-  #top_n(10, ROC) %>% 
+  top_n(5, ROC) %>% 
   knitr::kable(format = "markdown", digits = 3)
 
 
 ```
 
+## 5. Optimize probability threshold for top models
+The probability threshold (i. e. the threshold for when to predict a No-show or not on a scale from 0 to 1 predicted likelihood) can be optimized by using Thresholder. This function uses cross-validated training data to identify the probability threshold which optimize the trade-off between Sensitivity and Precision. 
 
-```{r best, evaluate = FALSE}
-load(save_version)
-
+```{r best, echo = FALSE}
 
 best_models<- list(C50_tune$`C5.0 - smote - full dataset - tuning`,
             tune_fits$`gbm - smote - full dataset`,
@@ -1151,21 +1202,18 @@ names(best_models)<- c("C5.0", "gbm", "mlp")
   
 ```
 
+Precision was set to be at least 0.8, with otherwise maximized sensitivity. This was chosen because it is arguably more valuable to a doctor's office to have fewer, but quite certain No-show predictions, than many uncertain ones. 
 
-
-```{r threshold, echo = FALSE, evaluate = FALSE}
-
-#Do this for each model as a function
+```{r threshold, echo = FALSE, results="hide", warning=FALSE}
 
 # Calculate the optimum threshold value and set prediction thresholds
 
-precision_threshold<- .8
+precision_threshold<- .8 #This is set to indicate lowest acceptable precision value
 
 prob_thresholds <- sapply(best_models, function(model){ 
 print(model)
 	#calculate resampling stats
 resample_stats <- thresholder(model,threshold = seq(.01, .99, by = 0.04), final = TRUE)
-
   #Optimize probability threshold
 prob_threshold <- resample_stats %>%
   filter(Precision>=precision_threshold) %>%
@@ -1174,6 +1222,12 @@ prob_threshold <- resample_stats %>%
 matrix(prob_threshold)
 })
 
+```
+
+
+
+```{r optimize_prob, echo = FALSE}
+
   #Pick out precision and sensitivity from resampled training data
 model_stats<- sapply(best_models, function(model){ 
   stats <- thresholder(model,threshold = prob_thresholds[model$method], final = TRUE) %>% 
@@ -1181,6 +1235,7 @@ model_stats<- sapply(best_models, function(model){
 matrix(stats)
 })
 
+#Turn stats into data frame
 rownames(model_stats)<- c("prob_threshold", "Sensitivity", "Precision")
 model_stats<- data.frame(t(model_stats)) %>%
   mutate(model = colnames(model_stats)) %>%
@@ -1188,27 +1243,21 @@ model_stats<- data.frame(t(model_stats)) %>%
          Sensitivity = as.numeric(Sensitivity)) %>%
   rename(Model = model)
 
-
+#Present data frame in nice table
 model_stats %>% 
   select(-prob_threshold) %>%
   select(Model, Precision, Sensitivity) %>%
   knitr::kable(format = "markdown", digits = 3)
 
 
-
-#Visualize optimal threshold, and trade-off between precision and sensitivity for training set
-# ggplot(stats,aes(x=prob_threshold,y=Value))+
-#   geom_point(aes(col=Case))+
-#   labs(title="Precision/Sensitivity vs Threshold", 
-#        y="Precision / Sensitivity", 
-#        x="Probability Threshold")+
-#   geom_vline(xintercept=pred_threshold, linetype="dotted")
-
-
 ```
 
+At high levels of precision, C5.0 had the best trade-off between precision and sensitivity. As a result, the final predictions will be made using the tuned C5.0 model on the testing set. 
 
-```{r metrics, echo = FALSE, evaluate = FALSE}
+## 6. Final predictions on test set using best performing model
+
+
+```{r metrics, echo = FALSE, warning=FALSE}
 
 best_model<- best_models$C5.0
 #Predict values and report on model metrics
@@ -1220,37 +1269,33 @@ pred_best <- ifelse(PRbest$No_show >= prob_thresholds["C5.0"], "No_show", "Prese
 
 ```
 
+Producing the final model's ROC curve we observe that the final ROC of 0.765 on the test set is consistent although slightly lower than what was achieved using cross-validated training data. 
 
+```{r roc, echo = FALSE, message = FALSE}
 
-```{r roc, echo = FALSE, evaluate = FALSE}
-#Plot ROC curve and ROC AUC confidence interval for test partition
-load("ml-2020-04-05.Rdata")
+#Plot ROC curve 
+plot.roc(test_df$No_show, PRbest$No_show, print.auc = TRUE, print.thres = "best", main = "C5.0, Tuned, on Testing set", legacy.axes = TRUE)
 
-#ci.thresholds(rpart.roc, thresholds = "best")
-plot.roc(test_df$No_show, PRbest$No_show, print.auc = TRUE, print.thres = "best", main = "C5.0, tuned", legacy.axes = TRUE)
+```
+
+The final confusion matrix shows that C5.0 correctly predicted roughly 14% of No-shows, at 82% certainty. The higher certainty and lower number of predictions is by design, as mentioned previously.  
+
+```{r confmat_1, echo = FALSE}
 
 #Call confusion matrix
-confusionMatrix(pred_best, test_df$`No_show`, mode = "prec_recall")
+xtab<- confusionMatrix(pred_best, test_df$`No_show`, mode = "prec_recall")
+print(xtab)
+
 
 
 ```
 
+The final figure is a visual representation of the confusion matrix, with the probability threshold indicated by the stapled line. It shows the trade-off between Sensitivity and Precision, in that a lower probability threshold would yield more true positives, but also false positives. 
 
-```{r lift, echo = FALSE, evaluate = FALSE}
-#----------------------Calculate lift curves and visualize confusion matrix----------------------
+```{r confmat_2, echo = FALSE}
 
-#Create dataframe for lift curves
+#Create data frame to visualize confusion matrix
 pr_metric_df<- data.frame(obs = test_df$No_show, prob = PRbest$No_show, pred = pred_best)
-# 
-# #Calculate and visualize lift curves
-# lift<- lift(obs ~ prob, data = pr_metric_df)
-# ggplot(lift)+
-#   labs(title = "Lift Curve, Undercall Model")
-
-```
-
-
-```{r confmat, echo = FALSE, evaluate = FALSE}
 
 #Visualize confusion matrix
 pr_metric_df %>% 
@@ -1261,10 +1306,10 @@ pr_metric_df %>%
      geom_vline(aes(xintercept = 1.5), linetype = "dashed")+
      geom_hline(aes(yintercept = prob_thresholds["C5.0"]), linetype = "dashed")+
      scale_color_manual(values = c("steelblue", "grey45"), name = "Prediction", labels = c("No-Show", "Present"))+
-     # geom_label(aes(x = 0.65, y = 0.9), label = str_wrap("True Positives", width = 8), color = "black")+
-     # geom_label(aes(x = 0.65, y = 0.1, label = str_wrap("False Negatives", width = 8)), color = "black")+
-     # geom_label(aes(x = 2.35, y = 0.1, label = str_wrap("True Negatives", width = 8)), color = "black")+
-     # geom_label(aes(x = 2.35, y = 0.9, label = str_wrap("False Positives", width = 8)), color = "black")+
+     geom_label(data = data.frame(c(0.65, 0.9)), aes(x = 0.65, y = 0.9), label = str_wrap("True Positives", width = 8), color = "black")+
+     geom_label(data = data.frame(c(0.65, 0.1)), aes(x = 0.65, y = 0.1, label = str_wrap("False Negatives", width = 8)), color = "black")+
+     geom_label(data = data.frame(c(2.35, 0.1)), aes(x = 2.35, y = 0.1, label = str_wrap("True Negatives", width = 8)), color = "black")+
+     geom_label(data = data.frame(c(2.35, 0.9)), aes(x = 2.35, y = 0.9, label = str_wrap("False Positives", width = 8)), color = "black")+
      labs(title = "Confusion Matrix Visual Summary",
           subtitle = "No-show predictions vs. actuals",
           y = "Predicted Probability of No-show",
@@ -1273,7 +1318,24 @@ pr_metric_df %>%
 
 ```
 
-## Conclusions
-Another iteration could split data according to time, so that the model is trained on appointments happening at the beginning of the timeframe, and the testing is done on appointments at the end of the timeframe. This would avoid the issue of having all patients beginning at 0 past no-shows. However, new patients will always have 0 no-shows. It is likely that predictions on new patients without any history is less accurate than predictions for individuals with many past appointments. 
+# Conclusions and Further Considerations
+This report completed a best effort analysis to predcict medical appointment No-shows. It did so testing a range of different models, with emphasis on a basic tree model (Rpart), a multilayer perceptron neural net (mlp), and two boosted tree models; Gradient Boosted Model (gmb) and C5.0. 
 
-The presence of negative values for some variables (i. e. time from booking to appointment) meant that they could not undergo log transformation, despite demonstrating a distribution that would lend itself well to said transformation. Access to data without such negative values could potentially improve results. 
+The latter three performed best among all the models tested, with C5.0 achieving the best results. The final model predicted 14% of no-shows at 82% precision. A model such as this can improve the efficiency of a doctor's office. 
+
+In the context of this dataset covering about a month, using these predictions could have saved the clinic roughly two thirds of a doctor FTE, assuming 160 hours in a work month. This was estimated by dividing 618 correct predictions by 6 (assuming 6 appointments per hour), resulting in 103 hours saved.  
+
+## Ethical and practical considerations
+Care should be taken when using a model such as this to predict No-shows, as it could result in unintended consequences such as discrimination against groups whose circumstances make them more likely to miss their appointments more often. No patients should face situations where their appointment was cancelled because a model expected the patient not to show up. 
+
+Consequently, the way results are used should be developed with care. One suggestion could be to adjust the expected length of appointments in the booking system by their likelihood of being missed, and fill up the total booking time of the course of the day. This would take advantage of the overall predictions for the whole day, instead of cancelling appointments for individuals. Additional work should be done around designing policies for applying machine learning models to improve doctor's offices' efficiency. 
+
+## Features and further exploration
+The model indicated that patient age, past no-show history, time from booking to appointment, and booking frequency are important features for no-show prediction. 
+
+The presence of negative values for some variables (i. e. time from booking to appointment) meant that they could not undergo log transformation, despite demonstrating a distribution that would lend itself well to said transformation. Access to data without such negative values could potentially improve results.
+
+Another iteration could split data according to time, so that the model is trained on appointments happening at the beginning of the timeframe, and the testing is done on appointments at the end of the timeframe. This would avoid the issue of having all patients beginning at 0 past no-shows. However, new patients will always have 0 no-shows. The implication from this is that predictions on new patients without any history is less accurate than predictions for individuals with many past appointments. 
+
+Finally, the data reflected patients and appointments in Brazil. Results may not be immediately transferable to other contexts. 
+
