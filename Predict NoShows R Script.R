@@ -1,4 +1,4 @@
-<<<<<<< HEAD
+
 ## ----setup, include=FALSE----------------------------------------------
 knitr::opts_chunk$set(echo = TRUE)
 
@@ -2040,4 +2040,3 @@ pr_metric_df %>%
           x = "Observed Values")
 
 
->>>>>>> c5efa2b858fafc778808791c3d40299cddd71425
