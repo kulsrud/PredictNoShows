@@ -17,6 +17,15 @@ if(!require(rpart.plot)) install.packages("rpart.plot", repos = "http://cran.us.
 if(!require(rpart)) install.packages("rpart", repos = "http://cran.us.r-project.org") #For rpart functions
 if(!require(DMwR)) install.packages("DMwR", repos = "http://cran.us.r-project.org") #For running algorithms in caret
 
+library("tidyverse")
+library("caret")
+library("gridExtra")
+library("lubridate")
+library("e1071")
+library("pROC")
+library("rpart.plot")
+library("DMwR")
+library("rpart")
 
 url<- "https://github.com/kulsrud/PredictNoShows/raw/master/" 
 file<- "KaggleV2-May-2016.csv"
@@ -462,7 +471,9 @@ ml_df <- df %>%
   group_by(PatientId) %>%
   mutate(AppointmentsPerDay = n() / duration) %>%
   ungroup() %>%
-  select(-c(PatientId, AppointmentID, ScheduledDay, AppointmentDay, ScheduledWeekDay, Neighbourhood, Alcoholism, Handicap, Gender))
+  select(-c(PatientId, AppointmentID, ScheduledDay, AppointmentDay, ScheduledWeekDay, Neighbourhood, Alcoholism, Handicap, Gender)) %>%
+  mutate(No_show = str_replace(No_show, "TRUE", "No_show"),
+         No_show = str_replace(No_show, "TRUE", "Present"))
 
 
 
