@@ -474,7 +474,7 @@ ml_df <- df %>%
   ungroup() %>%
   select(-c(PatientId, AppointmentID, ScheduledDay, AppointmentDay, ScheduledWeekDay, Neighbourhood, Alcoholism, Handicap, Gender)) %>%
   mutate(No_show = str_replace(No_show, "TRUE", "No_show"),
-         No_show = str_replace(No_show, "TRUE", "Present"))
+         No_show = str_replace(No_show, "FALSE", "Present"))
 
 
 
